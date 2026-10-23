@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Glimpse</Name>
+  <Repository>ghcr.io/YOUR_GITHUB_USER/glimpse:latest</Repository>
+  <Registry>https://github.com/YOUR_GITHUB_USER/glimpse/pkgs/container/glimpse</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/YOUR_GITHUB_USER/glimpse/issues</Support>
+  <Project>https://github.com/YOUR_GITHUB_USER/glimpse</Project>
+  <Overview>Glimpse is a self-hosted "one second a day" video diary. Capture a short clip each day, file it into projects (a diary, a trip, a new puppy), share projects with family, and mash them into short films with music and beat sync. Invite-only, with optional single sign-on (OpenID Connect) and Immich import.[br][br]Needs two other containers: PostgreSQL (16 or 17) and Redis (7+). Clips are saved to an Unraid share you map to /media, or optionally to S3-compatible storage (Garage, SeaweedFS, MinIO). See the project README for a step-by-step Unraid setup.[br][br]First run: open the WebUI and enter the setup code printed in this container's log.</Overview>
+  <Category>MediaApp:Video MediaApp:Photos Productivity:</Category>
+  <WebUI>http://[IP]:[PORT:3000]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/YOUR_GITHUB_USER/glimpse/main/unraid/glimpse.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/YOUR_GITHUB_USER/glimpse/main/public/icon-512.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires>PostgreSQL (16 or 17) and Redis (7 or newer), each as its own container, and a share for media (e.g. glimpse-media) mapped to /media. A reverse proxy (SWAG, Nginx Proxy Manager, Caddy or Traefik) with HTTPS if Glimpse is reachable from the internet.</Requires>
+  <Config Name="WebUI port" Target="3000" Default="3000" Mode="tcp" Description="Port the web app listens on. Point your reverse proxy here." Type="Port" Display="always" Required="true" Mask="false">3000</Config>
+  <Config Name="App data" Target="/data" Default="/mnt/user/appdata/glimpse" Mode="rw" Description="Database backups and temporary render files. Include this folder in your backups." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/glimpse</Config>
+  <Config Name="Media" Target="/media" Default="/mnt/user/glimpse-media" Mode="rw" Description="Where clips, photos, music and mashes are saved (when File storage is local). Use a /mnt/user/... share path, not /mnt/cache/..., so files stay visible after the mover runs. Cache pool as primary storage with the array as secondary works well." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/glimpse-media</Config>
+  <Config Name="File storage" Target="STORAGE" Default="local|s3" Mode="" Description="local saves files in the Media folder above (recommended). s3 uses an S3-compatible store instead: fill in the S3 settings under 'Show more settings'." Type="Variable" Display="always" Required="true" Mask="false">local</Config>
+  <Config Name="Public web address" Target="APP_URL" Default="" Mode="" Description="The address people use to open Glimpse, e.g. https://glimpse.yourdomain.com. Used in invite links, emails and the SSO redirect URL." Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="Secret key" Target="SECRET_KEY" Default="" Mode="" Description="A long random string used to sign sessions and encrypt stored secrets. Generate one in the Unraid terminal: openssl rand -hex 32 . Never change it after setup." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Database URL" Target="DATABASE_URL" Default="postgresql://glimpse:CHANGE_ME@192.168.1.10:5432/glimpse" Mode="" Description="PostgreSQL connection string: postgresql://USER:PASSWORD@HOST:PORT/DATABASE . Create the database and user first." Type="Variable" Display="always" Required="true" Mask="true">postgresql://glimpse:CHANGE_ME@192.168.1.10:5432/glimpse</Config>
+  <Config Name="Redis URL" Target="REDIS_URL" Default="redis://192.168.1.10:6379" Mode="" Description="Redis connection string for the job queue, e.g. redis://HOST:6379 or redis://:PASSWORD@HOST:6379 ." Type="Variable" Display="always" Required="true" Mask="false">redis://192.168.1.10:6379</Config>
+  <Config Name="S3 endpoint (optional)" Target="S3_ENDPOINT" Default="" Mode="" Description="Only when File storage is s3: address of your S3-compatible storage as Glimpse's server sees it, e.g. http://192.168.1.10:3900 for Garage. Browsers never talk to it directly." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="S3 bucket (optional)" Target="S3_BUCKET" Default="glimpse" Mode="" Description="Only when File storage is s3. Glimpse creates it if the key is allowed to." Type="Variable" Display="advanced" Required="false" Mask="false">glimpse</Config>
+  <Config Name="S3 access key (optional)" Target="S3_ACCESS_KEY" Default="" Mode="" Description="Only when File storage is s3." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="S3 secret key (optional)" Target="S3_SECRET_KEY" Default="" Mode="" Description="Only when File storage is s3." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="S3 region (optional)" Target="S3_REGION" Default="us-east-1" Mode="" Description="Only when File storage is s3. us-east-1 for MinIO; Garage usually uses 'garage' (match the region in Garage's config)." Type="Variable" Display="advanced" Required="false" Mask="false">us-east-1</Config>
+  <Config Name="Timezone" Target="TZ" Default="Australia/Melbourne" Mode="" Description="Server timezone, used for scheduled backups and as the default for new people." Type="Variable" Display="always" Required="false" Mask="false">Australia/Melbourne</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID that owns files in App data. Unraid default: 99 (nobody)." Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID that owns files in App data. Unraid default: 100 (users)." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  <Config Name="Run render worker" Target="GLIMPSE_WORKER" Default="true" Mode="" Description="true runs the video worker (uploads, playback copies, mashes) inside this container. Set to false only if you run a separate worker container from the same image." Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+  <Config Name="SSO issuer URL (optional)" Target="OIDC_ISSUER" Default="" Mode="" Description="Optional. Setting the OIDC_* variables turns on single sign-on and locks those fields in Settings. Leave empty to set SSO up in the app instead." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="SSO client ID (optional)" Target="OIDC_CLIENT_ID" Default="" Mode="" Description="Optional. Client ID from your identity provider." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="SSO client secret (optional)" Target="OIDC_CLIENT_SECRET" Default="" Mode="" Description="Optional. Client secret from your identity provider." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="Log level" Target="LOG_LEVEL" Default="info" Mode="" Description="info, debug or warn." Type="Variable" Display="advanced" Required="false" Mask="false">info</Config>
+</Container>
