@@ -9,7 +9,7 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/YOUR_GITHUB_USER/glimpse/issues</Support>
   <Project>https://github.com/YOUR_GITHUB_USER/glimpse</Project>
-  <Overview>Glimpse is a self-hosted "one second a day" video diary. Capture a short clip each day, file it into projects (a diary, a trip, a new puppy), share projects with family, and mash them into short films with music and beat sync. Invite-only, with optional single sign-on (OpenID Connect) and Immich import.[br][br]Needs two other containers: PostgreSQL (16 or 17) and Redis (7+). Clips are saved to an Unraid share you map to /media, or optionally to S3-compatible storage (Garage, SeaweedFS, MinIO). See the project README for a step-by-step Unraid setup.[br][br]First run: open the WebUI and enter the setup code printed in this container's log.</Overview>
+  <Overview>Glimpse is a self-hosted "one second a day" video diary. Capture a short clip each day, file it into projects (a diary, a trip, a new puppy), share projects with family, and mash them into short films with music and beat sync. Invite-only, with optional single sign-on (OpenID Connect) and Immich import.[br][br]Needs two other containers: PostgreSQL (15 or newer) and Redis (7+). Clips are saved to an Unraid share you map to /media, or optionally to S3-compatible storage (Garage, SeaweedFS, MinIO). See the project README for a step-by-step Unraid setup.[br][br]First run: open the WebUI and enter the setup code printed in this container's log.</Overview>
   <Category>MediaApp:Video MediaApp:Photos Productivity:</Category>
   <WebUI>http://[IP]:[PORT:3000]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/YOUR_GITHUB_USER/glimpse/main/unraid/glimpse.xml</TemplateURL>
@@ -20,7 +20,7 @@
   <DateInstalled/>
   <DonateText/>
   <DonateLink/>
-  <Requires>PostgreSQL (16 or 17) and Redis (7 or newer), each as its own container, and a share for media (e.g. glimpse-media) mapped to /media. A reverse proxy (SWAG, Nginx Proxy Manager, Caddy or Traefik) with HTTPS if Glimpse is reachable from the internet.</Requires>
+  <Requires>PostgreSQL (15 or newer) and Redis (7 or newer), each as its own container, and a share for media (e.g. glimpse-media) mapped to /media. A reverse proxy (SWAG, Nginx Proxy Manager, Caddy or Traefik) with HTTPS if Glimpse is reachable from the internet.</Requires>
   <Config Name="WebUI port" Target="3000" Default="4444" Mode="tcp" Description="Host port the web app is exposed on. Point your reverse proxy here." Type="Port" Display="always" Required="true" Mask="false">4444</Config>
   <Config Name="App data" Target="/data" Default="/mnt/user/appdata/glimpse" Mode="rw" Description="Database backups and temporary render files. Include this folder in your backups." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/glimpse</Config>
   <Config Name="Media" Target="/media" Default="/mnt/user/glimpse-media" Mode="rw" Description="Where clips, photos, music and mashes are saved (when File storage is local). Use a /mnt/user/... share path, not /mnt/cache/..., so files stay visible after the mover runs. Cache pool as primary storage with the array as secondary works well." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/glimpse-media</Config>

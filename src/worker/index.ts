@@ -6,7 +6,7 @@ import { getSettings } from "../server/settings";
 import { db, schema } from "../server/db";
 import { eq, or } from "drizzle-orm";
 import { processMedia, importImmich } from "./media";
-import { processTrack } from "./music";
+import { processTrack, backfillPeaks } from "./music";
 import { renderMash } from "./mash";
 import { runReminders, runBackup, cleanup, deleteObjects } from "./system";
 import { ffmpegVersion } from "./ff";
@@ -39,6 +39,7 @@ async function main() {
   for (const m of stale) await enqueue.renderMash(m.id);
   const staleMedia = await db.select().from(schema.media).where(eq(schema.media.status, "PROCESSING"));
   for (const m of staleMedia) await enqueue.processMedia(m.id);
+  backfillPeaks().catch((e) => log("waveforms:", (e as Error).message));
 
   const beat = () => conn.set("glimpse:worker", JSON.stringify({ at: Date.now(), ffmpeg: ff }), "EX", 60).catch(() => undefined);
   await beat();

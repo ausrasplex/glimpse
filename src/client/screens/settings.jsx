@@ -233,12 +233,14 @@ function ImmichAdmin() {
 
 function AdminSettings({ initialOpen }) {
   const { db, act, local, actSoon, me, toast } = useApp();
-  const [open, setOpen] = useState(initialOpen || "people");
+  const [open, setOpen] = useState(initialOpen || null);
   const [mail, setMail] = useState({ host: db.server.email.host, port: db.server.email.port, user: db.server.email.user, pass: "", from: db.server.email.from });
   const [mailBusy, setMailBusy] = useState(false);
   const srv = db.server;
   const onShare = !srv.storage || srv.storage.kind !== "s3";
   const admin = db.admin || {};
+  const clip = srv.clipLimit || { on: false, max: 60 };
+  const fmtLimit = (s) => (s % 60 === 0 ? s / 60 + " min" : s + " seconds");
   const setSrv = (o, ms) => { local((n) => Object.assign(n.server, o)); actSoon("srv-" + Object.keys(o).join(), "setServer", o, ms == null ? 50 : ms); };
   const approvals = db.invites.filter((i) => i.status === "needs").length;
   const removals = db.removalRequests.filter((r) => r.status === "open" && S.track(db, r.trackId));
@@ -263,12 +265,27 @@ function AdminSettings({ initialOpen }) {
         </div>
         <div className="stack gap6"><span className="sec">Default limit for new users</span><Opts value={srv.defaultQuota} onChange={(v) => setSrv({ defaultQuota: v })} options={[{ id: 1, label: "1 GB" }, { id: 5, label: "5 GB" }, { id: 10, label: "10 GB" }, { id: 25, label: "25 GB" }, { id: 0, label: "None" }]} /></div>
       </Acc>
+      <Acc id="capture" open={open} setOpen={setOpen} icon="camera" title="Capture" sub={clip.on ? "Clips up to " + (clip.max > 0 ? fmtLimit(clip.max) : "any length") : "Clips up to 10 seconds"}>
+        <ToggleRow title="Allow longer clips" sub={clip.on ? "Everyone can keep a longer moment from each video" : "Off: each glimpse keeps up to 10 seconds"} on={clip.on} onChange={(v) => setSrv({ clipLimit: Object.assign({}, clip, { on: v }) })} />
+        {clip.on ? (
+          <div className="stack gap6">
+            <span className="sec">Longest clip</span>
+            <Opts value={[30, 60, 300, 0].indexOf(clip.max) >= 0 ? clip.max : null} onChange={(v) => setSrv({ clipLimit: Object.assign({}, clip, { max: v }) })} options={[{ id: 30, label: "30s" }, { id: 60, label: "1 min" }, { id: 300, label: "5 min" }, { id: 0, label: "No limit" }]} />
+            <label className="hrow between gap12" style={{ marginTop: 4 }}>
+              <span className="small muted">Or set your own, in seconds</span>
+              <input className="input num" type="number" inputMode="numeric" min={11} max={36000} aria-label="Longest clip in seconds" value={clip.max > 0 ? clip.max : ""} placeholder="No limit" onChange={(e) => { const v = Math.round(Number(e.target.value)); setSrv({ clipLimit: Object.assign({}, clip, { max: v > 0 ? v : 0 }) }, 600); }} style={{ width: 110, padding: "8px 10px", textAlign: "right" }} />
+            </label>
+            <span className="small muted" style={{ lineHeight: 1.4 }}>Applies to trimming new glimpses and adjusting old ones. Longer clips make longer mashes, and you can still shorten each one when mashing.</span>
+          </div>
+        ) : null}
+      </Acc>
       <Acc id="render" open={open} setOpen={setOpen} icon="mash" title="Rendering" sub={(queue.length ? queue.length + " in queue" : "Idle") + " · " + (admin.worker && admin.worker.ok ? "worker running" : "worker not running")}>
         {admin.worker && !admin.worker.ok ? <span style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(224,120,110,0.1)", border: "1px solid rgba(224,120,110,0.35)", fontSize: 12, color: "#F0A49C", lineHeight: 1.4 }}>The render worker isn't running, so uploads and mashes will wait. Check the container log, and that GLIMPSE_WORKER is true.</span> : null}
         <div className="hrow between gap12"><span className="stack gap2"><span style={{ fontSize: 13.5, fontWeight: 600 }}>Renders at once</span><span className="small muted">More = faster queue, busier server</span></span><Stepper value={srv.concurrency} min={1} max={4} label="renders at once" onChange={(v) => setSrv({ concurrency: v }, 400)} /></div>
         <div className="stack gap6"><span className="sec">Playback copies</span><Opts value={srv.playback || "720"} onChange={(v) => setSrv({ playback: v })} options={[{ id: "720", label: "720p" }, { id: "1080", label: "1080p" }]} /><span className="small muted" style={{ lineHeight: 1.4 }}>Every upload gets a small H.264 copy so it plays in any browser, including iPhone HEVC videos. Originals are kept untouched for mashes. Adds about {srv.playback === "1080" ? "25" : "10"}% to clip storage.</span></div>
         <div className="stack gap6"><span className="sec">Mash resolution</span><Opts value={srv.maxRes} onChange={(v) => setSrv({ maxRes: v })} options={[{ id: "720", label: "720p" }, { id: "1080", label: "1080p" }, { id: "4k", label: "4K" }]} /></div>
         <div className="stack gap6"><span className="sec">Mash quality</span><Opts value={srv.mashQuality || "high"} onChange={(v) => setSrv({ mashQuality: v })} options={Object.keys(QUALITY).map((k) => ({ id: k, label: QUALITY[k].label, sub: QUALITY[k].audioKbps + " kbps" }))} /><span className="small muted" style={{ lineHeight: 1.4 }}>{QUALITY[srv.mashQuality || "high"].hint}. The starting choice for new mashes; people can change it per mash.</span></div>
+        <ToggleRow title="Allow downloading fonts from Google Fonts" sub={srv.googleFonts !== false ? "People can pick any Google font for text on mashes. The server downloads each one once." : "Only the fonts already on this server can be picked."} on={srv.googleFonts !== false} onChange={(v) => setSrv({ googleFonts: v })} />
         <div className="hrow gap10" style={{ padding: "10px 12px", borderRadius: 11, background: "#161513", border: "1px solid var(--line-soft)" }}><Icon name="cpu" size={18} color="var(--muted)" /><span className="stack gap2" style={{ flex: 1 }}><span style={{ fontSize: 13, fontWeight: 600 }}>CPU encoding</span><span className="tiny muted">{admin.worker && admin.worker.ffmpeg ? admin.worker.ffmpeg : "FFmpeg"} · GPU encoding is planned for a later version</span></span></div>
         <div className="stack gap6">
           <span className="sec">Queue</span>

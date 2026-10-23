@@ -1,5 +1,8 @@
 import React from "react";
-import { useApp, live, upload } from "../store.jsx";
+import { useApp, live } from "../store.jsx";
+import { resumableUpload, savePending, clearPending, latestPending, uploadState } from "../resumable.js";
+import { kindOfFile, ACCEPT, clipMaxOf } from "../../shared/media";
+import { filmedDay } from "../filmed.js";
 import { Icon } from "../icons.jsx";
 import { Screen, TopBar, Steps, ClipView, Thumb, DateSheet, Swatches, Opts, Choice, Redirect } from "../ui.jsx";
 import * as S from "../sel.js";
@@ -37,14 +40,84 @@ const orientOf = (w, h) => (!w || !h ? "portrait" : Math.abs(w - h) / Math.max(w
 
 // Uploads keep running while the person trims. Keyed by the draft's local id.
 export const uploads = {};
-function startUpload(key, file, onProgress) {
-  const job = { file, pct: 0, mediaId: null, error: null };
-  job.promise = upload("/api/upload/media", file, {}, (p) => { job.pct = p; if (onProgress) onProgress(p); })
-    .then((r) => { job.mediaId = r.mediaId; return r.mediaId; })
-    .catch((e) => { job.error = e.message; throw e; });
+function startUpload(key, file, type, setDraft, resume) {
+  const job = { file, pct: 0, mediaId: null, error: null, uploadId: resume ? resume.uploadId : null };
+  const mine = (o) => setDraft((cur) => (cur && cur.liveId === key ? Object.assign({}, cur, o) : cur));
+  const up = resumableUpload(file, type, {
+    onStart: (st) => {
+      job.uploadId = st.uploadId;
+      mine({ uploadId: st.uploadId });
+      if (!resume) savePending({ uploadId: st.uploadId, mediaId: st.mediaId, file, type, draft: null });
+    },
+    onProgress: (p) => { job.pct = p; mine({ uploadPct: p }); },
+    onWaiting: (w) => mine({ uploadWaiting: w })
+  }, resume);
+  job.cancel = up.cancel;
+  job.promise = up.promise.then((mid) => { job.mediaId = mid; return mid; }).catch((e) => { job.error = e.message; throw e; });
   job.promise.catch(() => {});
+  job.promise.then((mid) => mine({ mediaId: mid, uploadPct: 1, uploadWaiting: false }), (e) => mine({ uploadErr: e.message }));
   uploads[key] = job;
   return job;
+}
+// Stop a draft's upload and forget it (cancelled, or a different file was chosen).
+function abandon(d) {
+  const job = d && uploads[d.liveId];
+  if (job && !job.mediaId && job.cancel) job.cancel();
+  const upId = (d && d.uploadId) || (job && job.uploadId);
+  if (upId) clearPending(upId);
+}
+
+// The day a picked file was filmed: the server's reading once it has one, else the browser's quick guess.
+const filmedOf = (db, d) => { const m = d.mediaId ? S.media(db, d.mediaId) : null; return (m && m.takenDay) || d.filmedHint || null; };
+
+// Offers to file the glimpse on the day it was filmed, when that isn't the entry's day. Never changes the date by itself.
+const filmedOffer = (db, d) => { const day = filmedOf(db, d); return day && !d.dateChecked && day !== (d.date || todayKey()) && day <= todayKey() ? day : null; };
+function FilmedBanner({ d, setDraft, style }) {
+  const { db } = useApp();
+  const day = filmedOffer(db, d);
+  const entry = d.date || todayKey();
+  if (!day) return null;
+  const set = (o) => setDraft((cur) => Object.assign({}, cur, { dateChecked: true }, o));
+  return (
+    <div role="status" className="stack gap10" style={{ ...style, padding: 14, borderRadius: 14, background: "radial-gradient(circle at 0% 0%, var(--accent-soft), transparent 70%), var(--surface)", border: "1px solid var(--accent)" }}>
+      <span style={{ fontSize: 13.5, lineHeight: 1.4 }}><strong>Filmed on {dayLabel(day)}.</strong> <span className="muted">Save it to that day instead?</span></span>
+      <div className="grid2" style={{ gap: 8 }}>
+        <button className="chipbtn" style={{ background: "var(--accent)", color: "var(--accent-ink)", borderColor: "var(--accent)", fontWeight: 700 }} onClick={() => set({ date: day })}>Use {dayLabel(day)}</button>
+        <button className="chipbtn" onClick={() => set({})}>Keep {dayLabel(entry)}</button>
+      </div>
+    </div>
+  );
+}
+
+// After a reload: offer to carry on with a glimpse whose upload or steps weren't finished. Once per page load.
+let offered = false;
+export function useResumeOffer() {
+  const { draft, setDraft, nav, toast } = useApp();
+  useEffect(() => {
+    if (offered || draft) return;
+    offered = true;
+    latestPending().then((rec) => {
+      if (!rec) return;
+      toast("You have an unfinished glimpse", { label: "Continue", run: () => resumeSaved(rec, setDraft, nav, toast) });
+    });
+  }, []);
+}
+async function resumeSaved(rec, setDraft, nav, toast) {
+  const d = Object.assign({}, rec.draft, { uploadErr: null, uploadWaiting: false });
+  const key = d.liveId || uid("v");
+  d.liveId = key;
+  if (!d.mediaId && !rec.file) {
+    // The file was too big to keep in the browser: only usable if the server already has all of it.
+    const st = await uploadState(rec.uploadId);
+    if (!st || !st.done) { clearPending(rec.uploadId); toast("That upload can't continue without the file. Choose it again.", null, "warn"); return; }
+    d.mediaId = st.mediaId;
+  }
+  if (d.source === "file" && d.kind === "video") {
+    if (rec.file) live.video[key] = URL.createObjectURL(rec.file); else d.source = "server";
+  }
+  setDraft(d);
+  if (!d.mediaId) startUpload(key, rec.file, rec.type, setDraft, { uploadId: rec.uploadId, mediaId: rec.mediaId });
+  nav.go("capture");
 }
 
 // Server-side steps (upload, Immich copy, playback copy) shown while a file is prepared.
@@ -55,13 +128,13 @@ function Preparing({ draft, media }) {
     ? [["Copying from Immich", media && media.status !== "UPLOADING" ? 1 : proc], ["Making a playback copy", media && media.status === "PROCESSING" ? proc : media && media.status === "READY" ? 1 : 0]]
     : draft.kind === "photo" ? [["Uploading the photo", up], ["Preparing it for display", up < 1 ? 0 : proc]]
       : [["Uploading the original", up], ["Making a playback copy", up < 1 ? 0 : proc]];
-  const failed = media && media.status === "FAILED";
+  const failed = (media && media.status === "FAILED") || !!draft.uploadErr;
   return (
     <div className="stack gap20" style={{ padding: "40px 22px" }}>
       <div className="stack gap10" style={{ alignItems: "center", textAlign: "center" }}>
         <span style={{ width: 60, height: 60, borderRadius: "50%", background: failed ? "rgba(224,120,110,0.14)" : "var(--accent-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name={failed ? "alert" : draft.immichId ? "image" : "refresh"} size={26} color={failed ? "#F0A49C" : "var(--accent)"} /></span>
         <span style={{ fontSize: 17, fontWeight: 700 }}>{failed ? "That file couldn't be used" : "Getting your " + (draft.kind === "photo" ? "photo" : "video") + " ready"}</span>
-        <span className="muted ellipsis" style={{ fontSize: 13, maxWidth: 280 }}>{failed ? media.error : draft.fileName || ""}</span>
+        <span className="muted ellipsis" style={{ fontSize: 13, maxWidth: 280 }}>{failed ? (draft.uploadErr || media.error) : draft.fileName || ""}</span>
       </div>
       {!failed ? (
         <div className="card flush list">
@@ -76,7 +149,8 @@ function Preparing({ draft, media }) {
           })}
         </div>
       ) : null}
-      {draft.uploadErr ? <span className="errtext" style={{ textAlign: "center" }}>{draft.uploadErr}</span> : null}
+      {draft.uploadWaiting && !draft.uploadErr ? <span className="small" style={{ textAlign: "center", color: "#BDB7AD" }}>Waiting for a connection. The upload continues by itself.</span> : null}
+      {!failed && draft.uploadPct != null && draft.uploadPct < 1 ? <span className="small faint" style={{ textAlign: "center" }}>Keep Glimpse open until the upload finishes.</span> : null}
       {!failed && draft.kind !== "photo" ? <span className="small faint" style={{ lineHeight: 1.5, textAlign: "center" }}>This video is in a format some browsers can't play (often iPhone HEVC). Glimpse keeps your original untouched for mashes and makes a small copy that plays anywhere.</span> : null}
     </div>
   );
@@ -100,30 +174,42 @@ function loadPhoto(file) {
 export const MOTIONS = [{ id: "in", label: "Zoom in" }, { id: "out", label: "Zoom out" }, { id: "pan", label: "Pan" }, { id: "still", label: "Still" }];
 export const photoDraft = (o) => Object.assign({ source: "photo", kind: "photo", duration: 10, start: 0, len: 2, motion: "in", orient: "portrait" }, o);
 
+// Take Glimpse opens the camera; Browse files opens the phone's gallery or file picker, limited to videos and photos.
 function SourcePicker({ onFile, onPhoto }) {
   const { db, me, nav, toast } = useApp();
+  useResumeOffer();
+  const cam = useRef(null);
   const ref = useRef(null);
-  const pref = useRef(null);
   const im = db.server.immich || {};
+  const picked = (f) => {
+    const k = kindOfFile(f.name, f.type);
+    if (!k) { toast("That isn't a video or photo Glimpse can use.", null, "warn"); return; }
+    if (k.kind === "video") onFile(f, k.type); else onPhoto(f, k.type);
+  };
+  const take = (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) picked(f); };
   return (
     <div className="stack gap14" style={{ padding: "26px 20px" }}>
       <div className="stack gap12" style={{ alignItems: "center", textAlign: "center", padding: "34px 20px", borderRadius: 20, border: "1.5px dashed var(--line-strong)" }}>
         <span style={{ width: 60, height: 60, borderRadius: "50%", background: "var(--accent-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="camera" size={28} color="var(--accent)" /></span>
-        <span style={{ fontSize: 16, fontWeight: 700 }}>Film or choose a video</span>
-        <span className="muted" style={{ fontSize: 12.5, lineHeight: 1.45, maxWidth: 260 }}>On a phone this opens your camera or gallery. You'll pick the second you want to keep next.</span>
-        <button className="pill" style={{ marginTop: 4 }} onClick={() => ref.current && ref.current.click()}>Choose video</button>
-        <input ref={ref} type="file" accept="video/*" hidden onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) onFile(f); }} />
+        <span style={{ fontSize: 16, fontWeight: 700 }}>Film a moment</span>
+        <span className="muted" style={{ fontSize: 12.5, lineHeight: 1.45, maxWidth: 260 }}>Opens your camera. You'll pick the second you want to keep next.</span>
+        <button className="pill" style={{ marginTop: 4 }} onClick={() => cam.current && cam.current.click()}><Icon name="camera" size={15} stroke={2.2} />Take Glimpse</button>
+        <input ref={cam} type="file" accept="video/*" capture="environment" hidden onChange={take} />
       </div>
-      <button className="btn outline" onClick={() => pref.current && pref.current.click()}><Icon name="image" size={16} />Use a photo</button>
-      <input ref={pref} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) onPhoto(f); }} />
+      <div className="stack gap6">
+        <button className="btn outline" onClick={() => ref.current && ref.current.click()}><Icon name="image" size={16} />Browse files</button>
+        <span className="small faint" style={{ textAlign: "center" }}>Choose a video or photo from your gallery or files.</span>
+      </div>
+      <input ref={ref} type="file" accept={ACCEPT} hidden onChange={take} />
       {im.on ? <button className="btn outline" onClick={() => { if (!me.immich) { toast("Connect your Immich account in Profile first", { label: "Profile", run: () => nav.go("profile") }); return; } nav.go("immich"); }}><Icon name="image" size={16} />Choose from Immich</button> : null}
     </div>
   );
 }
 
 // Filmstrip with a draggable window: grab either end to trim, the middle to slide it.
-const MIN_LEN = 0.5, MAX_LEN = 10;
-function TrimStrip({ frames, grad, n, dur, start, len, onChange }) {
+const MIN_LEN = 0.5;
+function TrimStrip({ frames, grad, n, dur, start, len, maxLen, onChange }) {
+  const MAX_LEN = maxLen || 10;
   const ref = useRef(null);
   const end = start + len;
   const begin = (mode) => (e) => {
@@ -204,7 +290,8 @@ export function Trim({ params }) {
     } else if (media && media.strip) setFrames(stripFrames(media.strip, 20));
   }, [d.source, d.liveId, media && media.strip]);
 
-  const onFile = (f) => {
+  const onFile = (f, type) => {
+    abandon(draft);
     const url = URL.createObjectURL(f);
     const key = uid("v");
     live.video[key] = url;
@@ -212,33 +299,35 @@ export function Trim({ params }) {
     const v = document.createElement("video");
     v.preload = "metadata"; v.muted = true; v.src = url;
     let settled = false;
-    const job = startUpload(key, f, (p) => setDraft((cur) => (cur && cur.liveId === key ? Object.assign({}, cur, { uploadPct: p }) : cur)));
-    job.promise.then((mid) => { setDraft((cur) => (cur && cur.liveId === key ? Object.assign({}, cur, { mediaId: mid, uploadPct: 1 }) : cur)); refresh(); })
-      .catch((e) => setDraft((cur) => (cur && cur.liveId === key ? Object.assign({}, cur, { uploadErr: e.message }) : cur)));
+    const job = startUpload(key, f, type || f.type, setDraft);
+    job.promise.then(() => refresh(), () => {});
+    let hint = null;
+    filmedDay(f, "video").then((day) => { hint = day; if (day) setDraft((cur) => (cur && cur.liveId === key ? Object.assign({}, cur, { filmedHint: day }) : cur)); });
     v.onloadedmetadata = () => {
       if (settled) return; settled = true;
       const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
       if (!dur || !v.videoWidth) { v.onerror(); return; }
-      setDraft(Object.assign({}, base, { source: "file", liveId: key, kind: "video", grad: GRADS[Math.floor(Math.random() * GRADS.length)], duration: +dur.toFixed(1), start: +Math.min(dur * 0.2, Math.max(0, dur - 1)).toFixed(1), len: Math.min(1, dur), size: f.size, fileName: f.name, orient: orientOf(v.videoWidth, v.videoHeight), uploadPct: 0 }));
+      setDraft(Object.assign({}, base, { source: "file", liveId: key, kind: "video", grad: GRADS[Math.floor(Math.random() * GRADS.length)], duration: +dur.toFixed(1), start: +Math.min(dur * 0.2, Math.max(0, dur - 1)).toFixed(1), len: Math.min(1, dur), size: f.size, fileName: f.name, orient: orientOf(v.videoWidth, v.videoHeight), uploadPct: job.pct, uploadId: job.uploadId, mediaId: job.mediaId, filmedHint: hint }));
     };
     // The browser can't decode it (often iPhone HEVC): trim once the server has made a playback copy.
     v.onerror = () => {
       settled = true;
       delete live.video[key];
-      setDraft(Object.assign({}, base, { source: "server", liveId: key, kind: "video", fileName: f.name, size: f.size, uploadPct: 0 }));
+      setDraft(Object.assign({}, base, { source: "server", liveId: key, kind: "video", fileName: f.name, size: f.size, uploadPct: job.pct, uploadId: job.uploadId, mediaId: job.mediaId, filmedHint: hint }));
     };
   };
-  const onPhoto = async (f) => {
+  const onPhoto = async (f, type) => {
+    abandon(draft);
     const key = uid("p");
     const base = { date: (draft || {}).date, presetProjectId: (draft || {}).presetProjectId, returnTo: (draft || {}).returnTo };
     const ph = await loadPhoto(f);
-    const job = startUpload(key, f, (p) => setDraft((cur) => (cur && cur.liveId === key ? Object.assign({}, cur, { uploadPct: p }) : cur)));
-    job.promise.then((mid) => { setDraft((cur) => (cur && cur.liveId === key ? Object.assign({}, cur, { mediaId: mid, uploadPct: 1 }) : cur)); refresh(); })
-      .catch((e) => setDraft((cur) => (cur && cur.liveId === key ? Object.assign({}, cur, { uploadErr: e.message }) : cur)));
-    if (ph) setDraft(Object.assign({}, base, photoDraft({ liveId: key, grad: GRADS[0], thumb: ph.data, size: f.size, fileName: f.name, orient: orientOf(ph.w, ph.h), uploadPct: 0 })));
-    else setDraft(Object.assign({}, base, { source: "server", liveId: key, kind: "photo", fileName: f.name, size: f.size, uploadPct: 0 }));
+    const job = startUpload(key, f, type || f.type, setDraft);
+    job.promise.then(() => refresh(), () => {});
+    const up = { uploadPct: job.pct, uploadId: job.uploadId, mediaId: job.mediaId, filmedHint: await filmedDay(f, "photo") };
+    if (ph) setDraft(Object.assign({}, base, photoDraft({ liveId: key, grad: GRADS[0], thumb: ph.data, size: f.size, fileName: f.name, orient: orientOf(ph.w, ph.h) }), up));
+    else setDraft(Object.assign({}, base, { source: "server", liveId: key, kind: "photo", fileName: f.name, size: f.size }, up));
   };
-  const cancel = () => { setDraft(null); nav.back(); };
+  const cancel = () => { if (!editing) abandon(d); setDraft(null); nav.back(); };
 
   if (!d.source && editing) return <Screen />;
   if (waiting) {
@@ -246,8 +335,8 @@ export function Trim({ params }) {
       <Screen>
         <TopBar title={d.kind === "photo" ? "Photo glimpse" : "Pick the moment"} sub="New entry · Step 1 of 3" icon="close" backLabel="Cancel new entry" onBack={cancel} />
         <Steps n={1} of={3} />
-        <div className="scroll"><Preparing draft={d} media={media} /></div>
-        {media && media.status === "FAILED" || d.uploadErr ? <div style={{ padding: "12px 20px calc(22px + env(safe-area-inset-bottom, 0px))" }}><button className="btn outline" onClick={() => setDraft({ date: d.date, presetProjectId: d.presetProjectId, returnTo: d.returnTo })}>Choose something else</button></div> : null}
+        <div className="scroll"><Preparing draft={d} media={media} />{!editing ? <FilmedBanner d={d} setDraft={setDraft} style={{ margin: "0 22px 22px" }} /> : null}</div>
+        {media && media.status === "FAILED" || d.uploadErr ? <div style={{ padding: "12px 20px calc(22px + env(safe-area-inset-bottom, 0px))" }}><button className="btn outline" onClick={() => { abandon(d); setDraft({ date: d.date, presetProjectId: d.presetProjectId, returnTo: d.returnTo }); }}>Choose something else</button></div> : null}
       </Screen>
     );
   }
@@ -308,12 +397,14 @@ export function Trim({ params }) {
         </div>
         {!editing && (upPct !== null && upPct < 1 || d.uploadErr || d.immichId || (media && media.converted)) ? (
           <div className="hrow wrap gap6" style={{ justifyContent: "center", marginTop: 12, padding: "0 20px" }}>
-            {upPct !== null && upPct < 1 && !d.uploadErr ? <span className="tag" style={{ background: "var(--surface)", border: "1px solid var(--line)", color: "#BDB7AD" }}>Uploading in the background · {Math.round(upPct * 100)}%</span> : null}
+            {upPct !== null && upPct < 1 && !d.uploadErr ? <span className="tag" style={{ background: "var(--surface)", border: "1px solid var(--line)", color: "#BDB7AD" }}>{d.uploadWaiting ? "Upload paused · waiting for a connection" : "Uploading · " + Math.round(upPct * 100) + "% · keep Glimpse open"}</span> : null}
             {d.uploadErr ? <span className="tag" style={{ background: "rgba(224,120,110,0.12)", border: "1px solid rgba(224,120,110,0.4)", color: "#F0A49C" }}>Upload failed · {d.uploadErr}</span> : null}
             {d.immichId ? <span className="tag" style={{ background: "var(--surface)", border: "1px solid var(--line)", color: "#BDB7AD" }}>From Immich{d.date ? " · " + relDay(d.date) : ""}</span> : null}
             {media && media.converted && !isPhoto ? <span className="tag" style={{ background: "var(--surface)", border: "1px solid var(--line)", color: "#BDB7AD" }}>Playback copy · {media.converted} original kept for mashes</span> : null}
           </div>
         ) : null}
+        {!editing && filmedOf(db, d) ? <span className="small faint" style={{ display: "block", textAlign: "center", marginTop: 10 }}>Filmed {dayLabel(filmedOf(db, d))}</span> : null}
+        {!editing ? <FilmedBanner d={d} setDraft={setDraft} style={{ margin: "14px 20px 0" }} /> : null}
         {isPhoto ? (
           <div className="pad stack gap20" style={{ paddingTop: 22 }}>
             <div className="stack gap8"><span className="sec">Length</span><Opts value={+len.toFixed(1)} onChange={(l) => set({ len: l, start: 0 })} options={[1, 2, 3, 5].map((l) => ({ id: l, label: l + "s" }))} /></div>
@@ -323,7 +414,7 @@ export function Trim({ params }) {
         ) : (
           <div className="pad" style={{ paddingTop: 22 }}>
             <div className="hrow between" style={{ alignItems: "baseline", marginBottom: 10 }}><span className="sec">Drag the ends to trim</span><span className="small muted num">{fmtSec(start)} – {fmtSec(end)} · of {fmtSec(dur)}</span></div>
-            <TrimStrip frames={frames} grad={d.grad} n={n} dur={dur} start={start} len={len} onChange={(o) => setDraft((cur) => Object.assign({}, cur, o))} />
+            <TrimStrip frames={frames} grad={d.grad} n={n} dur={dur} start={start} len={len} maxLen={clipMaxOf(db.server.clipLimit)} onChange={(o) => setDraft((cur) => Object.assign({}, cur, o))} />
             <div className="stack gap8" style={{ marginTop: 16 }}>
               <div className="hrow between" style={{ alignItems: "baseline" }}><span className="sec">Quick length</span><span className="small faint">Keeps your start, moves the end</span></div>
               <Opts value={[1, 2, 3, 5].indexOf(+len.toFixed(1)) >= 0 ? +len.toFixed(1) : null} onChange={(l) => set({ len: Math.min(l, dur), start: Math.min(start, Math.max(0, dur - l)) })} options={[1, 2, 3, 5].map((l) => ({ id: l, label: l + "s", disabled: l > dur }))} />
@@ -345,7 +436,7 @@ export function Trim({ params }) {
       </div>
       <div style={{ padding: "12px 20px calc(22px + env(safe-area-inset-bottom, 0px))", flexShrink: 0 }}>
         <button className="btn" disabled={busy} onClick={next}>{editing ? "Save" : "Next: choose projects"}</button>
-        {!editing ? <button className="btn danger-ghost" style={{ marginTop: 4, padding: 10, fontSize: 13 }} onClick={() => setDraft({ date: d.date, presetProjectId: d.presetProjectId, returnTo: d.returnTo })}>{isPhoto ? "Choose something else" : "Choose a different video"}</button> : null}
+        {!editing ? <button className="btn danger-ghost" style={{ marginTop: 4, padding: 10, fontSize: 13 }} onClick={() => { abandon(d); setDraft({ date: d.date, presetProjectId: d.presetProjectId, returnTo: d.returnTo }); }}>{isPhoto ? "Choose something else" : "Choose a different video"}</button> : null}
       </div>
     </Screen>
   );
@@ -377,6 +468,7 @@ export function PickProjects() {
           </div>
           <button className="chipbtn" onClick={() => setDateOpen(true)}>Change</button>
         </div>
+        <FilmedBanner d={d} setDraft={setDraft} style={{ marginTop: 14 }} />
         <div className="hrow between" style={{ alignItems: "baseline", marginTop: 22, marginBottom: 10 }}>
           <span className="sec">Pick one or more</span>
           <span className="small" style={{ color: picked.length ? "var(--accent)" : "var(--faint)", fontWeight: 600 }}>{picked.length ? picked.length + " selected" : "None selected"}</span>
@@ -396,7 +488,9 @@ export function PickProjects() {
               </button>
             );
           })}
+          <button onClick={() => { set({ projectIds: picked }); nav.go("projectEdit", { back: 1 }); }} className="stack gap8" style={{ height: 150, borderRadius: 16, border: "1.5px dashed var(--line-strong)", background: "none", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 13, fontWeight: 600 }}><span className="plus"><Icon name="plus" size={16} stroke={2.3} color="var(--muted)" /></span>New project</button>
         </div>
+        {!projects.length ? <p className="small faint" style={{ lineHeight: 1.45 }}>You don't have a project yet. Create one to file this glimpse in. You'll come straight back here.</p> : null}
         {picked.length > 1 ? <p className="small faint" style={{ lineHeight: 1.45 }}>One upload, shared by all {picked.length}. It's stored once to save space.</p> : null}
         <div style={{ height: 18 }} />
       </div>
@@ -481,6 +575,7 @@ export function NoteMood() {
       }
       await act("saveCapture", { mediaId: mid, start: d.start, len: d.len, motion: d.motion || null, projectIds: d.projectIds, date: d.date || todayKey(), note, mood: r.mood, newMoodColor: r.newColor || null });
     } catch (e) { setSaving(false); if (!e.status) toast(e.message, null, "warn"); return; }
+    if (d.uploadId) clearPending(d.uploadId);
     toast("Saved to " + names[0].name + (names.length > 1 ? " + " + (names.length - 1) + " more" : "") + (d.date !== todayKey() ? " · " + relDay(d.date) : ""));
     const back = d.returnTo;
     setDraft(null);
@@ -491,6 +586,7 @@ export function NoteMood() {
       <TopBar title="Note & mood" sub="New entry · Step 3 of 3 · both optional" backLabel="Back to projects" onBack={() => { setDraft(Object.assign({}, d, { note, mood })); nav.back(); }} />
       <Steps n={3} of={3} />
       <div className="scroll pad stack gap20" style={{ paddingTop: 20 }}>
+        <FilmedBanner d={d} setDraft={setDraft} />
         <div className="hrow gap14" style={{ alignItems: "stretch" }}>
           <ClipView muted m={{ grad: d.grad, thumb: d.thumb, liveId: d.source === "file" ? d.liveId : null, src: d.mediaId && S.media(db, d.mediaId) ? S.media(db, d.mediaId).src : null, kind: d.kind, motion: d.motion }} start={d.start} end={d.start + d.len} playing loop style={{ width: 110, height: 150, borderRadius: 14 }} />
           <div className="stack gap8" style={{ flex: 1, minWidth: 0 }}>

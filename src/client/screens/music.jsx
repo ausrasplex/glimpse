@@ -4,39 +4,77 @@ import { Icon } from "../icons.jsx";
 import { Screen, TopBar, Sheet, Menu, Confirm } from "../ui.jsx";
 import * as S from "../sel.js";
 import { fmtDur, shortDate, uid } from "../util.js";
+import { barsFrom } from "../../shared/peaks";
 
 const { useState, useEffect, useRef } = React;
 
-function wave(n, seed) { const out = []; for (let i = 0; i < n; i++) out.push(Math.min(1, 0.25 + 0.4 * Math.abs(Math.sin(i * 0.37 + seed)) + 0.3 * Math.abs(Math.sin(i * 1.13 + seed * 2.1)))); return out; }
-
-// Plays a real uploaded file, or pretends for the sample library.
-function usePreview() {
+// Plays a track preview. Position comes from the audio itself, so the waveform's progress line stays true,
+// and seek() jumps anywhere (starting playback there if it wasn't playing). A seek can also say where to stop.
+export function usePreview() {
   const [playing, setPlaying] = useState(null);
   const [pos, setPos] = useState(0);
   const audio = useRef(null);
+  const until = useRef(null);
   useEffect(() => {
     if (!playing) return;
-    const start = Date.now();
-    const id = setInterval(() => setPos((Date.now() - start) / 1000), 100);
-    return () => clearInterval(id);
+    let raf = 0;
+    const tick = () => {
+      const a = audio.current;
+      if (a) { setPos(a.currentTime || 0); if (until.current != null && a.currentTime >= until.current) { a.pause(); audio.current = null; setPlaying(null); return; } }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [playing]);
   useEffect(() => () => { if (audio.current) audio.current.pause(); }, []);
-  const toggle = (t) => {
+  const stop = () => { if (audio.current) { audio.current.pause(); audio.current = null; } setPlaying(null); };
+  const start = (t, at) => {
     if (audio.current) { audio.current.pause(); audio.current = null; }
-    if (playing === t.id) { setPlaying(null); return; }
-    setPos(0); setPlaying(t.id);
     const url = (t.liveId && live.audio[t.liveId]) || t.src;
-    if (url) { const a = new Audio(url); audio.current = a; const p = a.play(); if (p && p.catch) p.catch(() => {}); a.onended = () => setPlaying(null); }
+    if (!url) return;
+    const a = new Audio(url);
+    a.preload = "auto";
+    audio.current = a;
+    if (at) a.currentTime = at;
+    setPos(at || 0); setPlaying(t.id);
+    a.onended = () => { if (audio.current === a) { setPlaying(null); setPos(0); } };
+    const p = a.play(); if (p && p.catch) p.catch(() => {});
   };
-  return { playing, pos, toggle };
+  const toggle = (t) => { if (playing === t.id) stop(); else { until.current = null; start(t, 0); } };
+  const seek = (t, at, stopAt) => {
+    until.current = stopAt == null ? null : stopAt;
+    const x = Math.max(0, Math.min(at, Math.max(0, (t.duration || 0) - 0.05)));
+    if (playing === t.id && audio.current) { audio.current.currentTime = x; setPos(x); } else start(t, x);
+  };
+  return { playing, pos, toggle, seek };
 }
 
-function Wave({ t, playing, pos, n, height }) {
-  const bars = wave(n || 48, t.bpm / 10 + t.title.length);
-  const prog = playing ? Math.min(1, pos / Math.min(30, t.duration)) : 0;
+// The track's real waveform. Tap or drag to seek; arrow keys step 5 seconds.
+function Wave({ t, playing, pos, n, height, onSeek }) {
+  const ref = useRef(null);
+  const count = n || 48;
+  const bars = barsFrom(t.peaks, count);
+  const dur = t.duration || 0;
+  const prog = playing && dur ? Math.min(1, pos / dur) : 0;
+  const ready = t.status === "ready";
+  const at = (e) => { const r = ref.current.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * dur; };
+  const down = (e) => {
+    if (!onSeek || !ready || !dur) return;
+    e.preventDefault();
+    onSeek(at(e));
+    const move = (ev) => onSeek(at(ev));
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+  };
+  const key = (e) => {
+    const d = e.key === "ArrowLeft" ? -5 : e.key === "ArrowRight" ? 5 : 0;
+    if (!d || !onSeek) return;
+    e.preventDefault(); onSeek((playing ? pos : 0) + d);
+  };
   return (
-    <div className="hrow" style={{ gap: 2, height: height || 26 }} aria-hidden="true">
-      {bars.map((v, i) => <div key={i} style={{ flex: 1, height: Math.round(v * 100) + "%", borderRadius: 1, background: t.status !== "ready" ? "#2A2825" : playing && i / bars.length < prog ? "var(--accent)" : playing ? "#4A4742" : "var(--line-strong)" }} />)}
+    <div ref={ref} role={onSeek ? "slider" : undefined} tabIndex={onSeek && ready ? 0 : undefined} aria-label={onSeek ? "Seek in " + t.title : undefined} aria-valuemin={onSeek ? 0 : undefined} aria-valuemax={onSeek ? Math.round(dur) : undefined} aria-valuenow={onSeek ? Math.round(playing ? pos : 0) : undefined} aria-valuetext={onSeek ? fmtDur(playing ? pos : 0) + " of " + fmtDur(dur) : undefined}
+      onPointerDown={down} onKeyDown={key} className="hrow" style={{ gap: 2, height: height || 26, cursor: onSeek && ready ? "pointer" : "default", touchAction: onSeek ? "none" : "auto" }} aria-hidden={onSeek ? undefined : "true"}>
+      {(bars.length ? bars : Array.from({ length: count }, () => 0.12)).map((v, i) => <div key={i} style={{ flex: 1, height: Math.max(8, Math.round(v * 100)) + "%", borderRadius: 1, background: !ready ? "#2A2825" : playing && (i + 0.5) / count <= prog ? "var(--accent)" : playing ? "#4A4742" : "var(--line-strong)" }} />)}
     </div>
   );
 }
@@ -49,7 +87,7 @@ export function MusicLibrary() {
   const [removal, setRemoval] = useState(null);
   const [reason, setReason] = useState("");
   const [del, setDel] = useState(null);
-  const { playing, pos, toggle } = usePreview();
+  const { playing, pos, toggle, seek } = usePreview();
   const admin = S.isAdmin(db, me.id);
   const canUpload = admin || db.server.musicUploads;
   const list = db.tracks.filter((t) => !q || (t.title + " " + t.artist).toLowerCase().indexOf(q.toLowerCase()) >= 0).sort((a, b) => sort === "name" ? a.title.localeCompare(b.title) : sort === "bpm" ? a.bpm - b.bpm : sort === "length" ? a.duration - b.duration : b.addedAt - a.addedAt);
@@ -83,7 +121,7 @@ export function MusicLibrary() {
                 {ready ? <span className="tag" style={{ color: "var(--accent)", fontSize: 11 }}>{t.bpm} BPM</span> : null}
                 <button className="iconbtn plain sq" style={{ width: 30, height: 30, background: open ? "#2A2825" : "transparent" }} aria-label={"More options for " + t.title} onClick={() => setMenu(open ? null : t.id)}><Icon name="more" size={16} color="var(--muted)" /></button>
               </div>
-              <div style={{ marginTop: 10 }}><Wave t={t} playing={pl} pos={pos} /></div>
+              <div style={{ marginTop: 10 }}><Wave t={t} playing={pl} pos={pos} onSeek={(x) => seek(t, x)} /></div>
               {open ? (
                 <div style={{ marginTop: 10 }}>
                   <Menu items={[
@@ -224,7 +262,7 @@ export function MusicUpload() {
                 <span className="stack gap2" style={{ minWidth: 0 }}><span className="ellipsis" style={{ fontSize: 13.5, fontWeight: 600 }}>{file.name}</span><span className="small muted">{fmtDur(t.duration)} · {(file.size / 1e6).toFixed(1)} MB · {file.format}{t.lufs != null ? " · " + t.lufs + " LUFS" : ""}</span></span>
                 <button onClick={() => pv.toggle(t)} aria-label="Preview track" style={{ width: 36, height: 36, flexShrink: 0, borderRadius: "50%", background: pv.playing ? "var(--accent)" : "#2A2825", border: "none", display: "flex", alignItems: "center", justifyContent: "center", color: pv.playing ? "var(--accent-ink)" : "var(--fg)" }}><Icon name={pv.playing ? "pause" : "play"} size={14} /></button>
               </div>
-              <Wave t={{ bpm: t.detectedBpm || 96, title: file.name, duration: t.duration, status: "ready" }} playing={!!pv.playing} pos={pv.pos} n={56} height={40} />
+              <Wave t={Object.assign({}, t, { title: file.name })} playing={pv.playing === t.id} pos={pv.pos} n={56} height={40} onSeek={(x) => pv.seek(t, x)} />
             </div>
             <div className="stack gap10">
               <span className="sec">Details</span>

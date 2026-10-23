@@ -104,6 +104,7 @@ export const media = pgTable("media", {
   clipEnd: real("clip_end").notNull().default(1),
   motion: text("motion"),
   takenAt: ts("taken_at"),
+  takenDay: text("taken_day"),
   immichAssetId: text("immich_asset_id"),
   error: text("error"),
   progress: integer("progress").notNull().default(0),
@@ -134,6 +135,7 @@ export const tracks = pgTable("tracks", {
   format: text("format"),
   key: text("key"),
   playKey: text("play_key"),
+  peaks: jsonb("peaks").$type<number[]>(),
   size: bigint("size", { mode: "number" }).notNull().default(0),
   status: text("status").notNull().default("processing"), // processing | ready | failed
   addedBy: text("added_by").references(() => users.id, { onDelete: "set null" }),

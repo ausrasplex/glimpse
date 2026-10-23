@@ -2,6 +2,7 @@ import React from "react";
 import { useApp } from "../store.jsx";
 import { Icon } from "../icons.jsx";
 import { Screen, Avatar, Thumb, PlayBadge, ClipView } from "../ui.jsx";
+import { useResumeOffer } from "./capture.jsx";
 import * as S from "../sel.js";
 import { todayKey, rel, greeting, WEEKDAY, MONTH, relDay, hexA, fullDay, parseKey } from "../util.js";
 
@@ -25,12 +26,14 @@ const TYPE = {
 const plural = (n, w) => n + " " + w + (n === 1 ? "" : "s");
 
 export function Notifications({ onClose }) {
-  const { db, act, nav, me, toast, setMashDraft } = useApp();
+  const { db, act, nav, me, toast, setMashDraft, setDraft } = useApp();
   const list = db.notifications.filter((n) => n.userId === me.id).sort((a, b) => b.at - a.at);
   const DAY = 86400000;
   const today = list.filter((n) => Date.now() - n.at < DAY);
   const earlier = list.filter((n) => Date.now() - n.at >= DAY).slice(0, 12);
-  const unread = list.filter((n) => !n.read).length;
+  const pending = S.dailyPending(db, me.id);
+  const unread = list.filter((n) => !n.read).length + (pending ? 1 : 0);
+  const capture = () => { onClose(); setDraft(null); nav.go("capture"); };
   const markRead = (id) => { const x = list.find((n) => n.id === id); if (x && !x.read) act("notifRead", { id }).catch(() => {}); };
   const follow = (l) => {
     if (!l) return;
@@ -83,7 +86,19 @@ export function Notifications({ onClose }) {
           <button className="link" style={{ color: unread ? "var(--accent)" : "var(--ghost)" }} onClick={() => act("notifReadAll").catch(() => {})}>Mark all read</button>
         </div>
         <div className="scroll">
-          {!list.length ? <div className="small faint" style={{ padding: 24, textAlign: "center" }}>Nothing yet. Milestones, finished mashes and invites show up here.</div> : null}
+          {pending ? (
+            <div className="stack gap10" style={{ margin: 12, padding: 14, borderRadius: 14, background: "radial-gradient(circle at 0% 0%, var(--accent-soft), transparent 70%), var(--raised)", border: "1px solid var(--accent)" }}>
+              <div className="hrow gap12">
+                <span style={{ width: 40, height: 40, flexShrink: 0, borderRadius: "50%", background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="camera" size={20} stroke={2.2} color="var(--accent-ink)" /></span>
+                <span className="stack gap2" style={{ flex: 1, minWidth: 0 }}>
+                  <span className="hrow between gap8"><span style={{ fontSize: 14.5, fontWeight: 700 }}>No glimpse yet today</span><span className="tiny faint" style={{ fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>Pinned</span></span>
+                  <span className="small" style={{ color: "var(--fg-2)", lineHeight: 1.4 }}>{pending.best.streak ? "Keep your " + pending.best.streak + " day " + pending.best.p.name + " streak going." : "One second is all it takes to keep " + pending.best.p.name + " going."}</span>
+                </span>
+              </div>
+              <button className="pill" style={{ alignSelf: "stretch", justifyContent: "center" }} onClick={capture}>Take today's glimpse</button>
+            </div>
+          ) : null}
+          {!list.length && !pending ? <div className="small faint" style={{ padding: 24, textAlign: "center" }}>Nothing yet. Milestones, finished mashes and invites show up here.</div> : null}
           {today.length ? <div className="sec" style={{ padding: "10px 16px 4px" }}>Today</div> : null}
           {today.map((n) => <Item key={n.id} n={n} />)}
           {earlier.length ? <div className="sec" style={{ padding: "12px 16px 4px", borderTop: today.length ? "1px solid var(--line-soft)" : "none", marginTop: 4 }}>Earlier</div> : null}
@@ -97,7 +112,7 @@ export function Notifications({ onClose }) {
 
 export function Bell({ open, onToggle }) {
   const { db, me } = useApp();
-  const unread = S.unreadCount(db, me.id);
+  const unread = S.unreadCount(db, me.id) + (S.dailyPending(db, me.id) ? 1 : 0);
   const badge = S.prefs(db, me.id).badge;
   return (
     <button className="iconbtn" aria-label={"Notifications" + (unread ? ", " + unread + " unread" : "")} onClick={onToggle} style={{ background: open ? "#2A2825" : "var(--surface)", color: open ? "var(--fg)" : "var(--muted)" }}>
@@ -109,13 +124,45 @@ export function Bell({ open, onToggle }) {
 }
 
 export function ProjectCard({ x, onClick }) {
+  const { db } = useApp();
+  const lastDay = S.projectEntries(db, x.p.id).reduce((a, e) => (a > e.date ? a : e.date), "");
+  const rd = lastDay ? relDay(lastDay) : null;
+  const when = rd ? "last clip " + (rd === "Today" || rd === "Yesterday" ? rd.toLowerCase() : rd) : null;
+  const people = x.shared ? x.members.map((m) => S.user(db, m.userId)).filter(Boolean).slice(0, 4) : [];
   return (
-    <button className="pcard" onClick={onClick} style={{ background: x.cover ? (x.cover.thumb ? "url(" + x.cover.thumb + ") center/cover" : x.cover.grad) : "var(--surface)" }}>
+    <button className="pcard" aria-label={"Open " + x.p.name + " in the calendar"} onClick={onClick} style={{ background: x.cover ? (x.cover.thumb ? "url(" + x.cover.thumb + ") center/cover, " + x.cover.grad : x.cover.grad) : "var(--surface)" }}>
       <span className="shade" />
       <span className="cat" style={{ color: x.cat.color }}>{x.cat.name.toUpperCase()}</span>
-      {x.cat.daily && x.streak ? <span className="streak"><Icon name="flame" size={11} color="var(--accent)" />{x.streak}</span> : x.shared ? <span className="streak"><Icon name="users" size={11} color="var(--fg-2)" />{x.members.length}</span> : null}
-      <span className="foot"><span className="name ellipsis" style={{ display: "block" }}>{x.p.name}</span><span className="meta" style={{ display: "block" }}>{x.count ? x.count + (x.count === 1 ? " entry" : " entries") : "No clips yet"}</span></span>
+      {x.cat.daily && x.streak ? <span className="streak"><Icon name="flame" size={12} color="var(--accent)" />{x.streak}</span> : null}
+      <span className="foot">
+        <span className="name ellipsis" style={{ display: "block" }}>{x.p.name}</span>
+        <span className="hrow between gap8">
+          <span className="meta ellipsis">{x.count ? x.count + (x.count === 1 ? " entry" : " entries") + (when ? " · " + when : "") : "No clips yet"}</span>
+          {people.length ? <span className="hrow" style={{ flexShrink: 0 }}>{people.map((u, i) => <span key={u.id} style={{ marginLeft: i ? -7 : 0, borderRadius: "50%", border: "2px solid var(--surface)", display: "flex" }}><Avatar user={u} size={22} ring={false} /></span>)}</span> : null}
+        </span>
+      </span>
     </button>
+  );
+}
+
+// Full-width project cards in a sideways row, with dots for position. Tapping a card opens its calendar.
+function ProjectRow({ projects }) {
+  const { nav } = useApp();
+  const [at, setAt] = useState(0);
+  const n = projects.length + 1;
+  const onScroll = (e) => { const el = e.currentTarget; const card = el.firstElementChild; if (!card) return; setAt(Math.min(n - 1, Math.round(el.scrollLeft / (card.offsetWidth + 12)))); };
+  return (
+    <>
+      <div className="hscroll snap" style={{ marginTop: 12 }} onScroll={onScroll}>
+        {projects.map((x) => <ProjectCard key={x.p.id} x={x} onClick={() => nav.go("calendar", { projectId: x.p.id })} />)}
+        <button className={"newcard" + (projects.length ? "" : " first")} onClick={() => nav.go("projectEdit", {})}>
+          <span className="plus"><Icon name="plus" size={projects.length ? 22 : 28} stroke={2.4} color={projects.length ? "var(--muted)" : "var(--accent-ink)"} /></span>
+          <span className="t">{projects.length ? "New Project" : "Add Your First Project"}</span>
+          {projects.length ? null : <span className="d">A daily diary, a trip, a new puppy. Every glimpse you take lives in a project.</span>}
+        </button>
+      </div>
+      {n > 1 ? <div className="hrow" style={{ justifyContent: "center", gap: 6, marginTop: 12 }} aria-hidden="true">{Array.from({ length: n }, (_, i) => <span key={i} style={{ width: i === at ? 18 : 6, height: 6, borderRadius: 3, background: i === at ? "var(--accent)" : "var(--line-strong)", transition: "width 0.2s" }} />)}</div> : null}
+    </>
   );
 }
 
@@ -159,21 +206,15 @@ function OnThisDay({ groups }) {
 }
 
 export function Home() {
-  const { db, nav, me, setDraft } = useApp();
+  const { db, nav, me } = useApp();
+  useResumeOffer();
   const [open, setOpen] = useState(false);
   const d = new Date();
   const projects = S.sortProjects(S.myProjects(db, me.id));
-  const mine = db.entries.filter((e) => e.authorId === me.id);
-  const fresh = mine.length === 0;
-  const dailyIds = projects.filter((x) => x.cat.daily).map((x) => x.p.id);
-  const todays = db.entries.filter((e) => e.date === todayKey() && e.authorId === me.id);
-  const doneDaily = todays.some((e) => dailyIds.indexOf(e.projectId) >= 0);
-  const best = projects.filter((x) => x.cat.daily).sort((a, b) => b.streak - a.streak)[0];
+  const fresh = !db.entries.some((e) => e.authorId === me.id);
   const visible = new Set(projects.map((x) => x.p.id));
-  const recent = db.entries.filter((e) => visible.has(e.projectId)).sort((a, b) => b.createdAt - a.createdAt).slice(0, 6);
   const invites = db.members.filter((m) => m.userId === me.id && m.status === "INVITED");
   const otd = !fresh && S.prefs(db, me.id).onThisDay !== false ? onThisDay(db, me, visible) : [];
-  const capture = (date) => { setDraft(date ? { date } : null); nav.go("capture"); };
 
   return (
     <Screen tab="home">
@@ -207,73 +248,23 @@ export function Home() {
             </div>
           );
         })}
-        {fresh ? (
-          <div className="stack gap12" style={{ alignItems: "center", textAlign: "center", padding: "26px 20px", borderRadius: 20, background: "radial-gradient(circle at 50% 0%, var(--accent-soft), transparent 70%), var(--surface)", border: "1px solid var(--line)" }}>
-            <span style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 24px rgba(0,0,0,0.35)" }}><Icon name="camera" size={28} stroke={2.2} color="var(--accent-ink)" /></span>
-            <span style={{ fontSize: 18, fontWeight: 700 }}>Take your first glimpse</span>
-            <span className="muted" style={{ fontSize: 13, lineHeight: 1.5, maxWidth: 260 }}>Film anything from today. You'll pick the best second next. Day one of your Diary starts here.</span>
-            <button className="pill" style={{ padding: "12px 26px", fontSize: 14 }} onClick={() => capture()}>Capture now</button>
-          </div>
-        ) : doneDaily ? (
-          <div className="hrow gap14" style={{ padding: 14, borderRadius: 18, background: "var(--surface)", border: "1px solid var(--line)" }}>
-            <Thumb m={S.media(db, todays[todays.length - 1].mediaId)} style={{ width: 58, height: 78, borderRadius: 10 }}><PlayBadge size={24} /></Thumb>
-            <div className="stack gap4" style={{ flex: 1, minWidth: 0 }}>
-              <span className="hrow gap6" style={{ fontSize: 15, fontWeight: 700 }}><Icon name="check" size={16} stroke={2.6} color="var(--ok)" />Today's glimpse is in</span>
-              <span className="small muted">{best && best.streak ? best.streak + " day streak in " + best.p.name + ". Nice." : "Nice one."}</span>
-              <button className="link" style={{ alignSelf: "flex-start" }} onClick={() => capture()}>Add another</button>
-            </div>
-          </div>
-        ) : (
-          <div className="stack gap10" style={{ alignItems: "center", textAlign: "center", padding: "22px 18px", borderRadius: 18, border: "1.5px dashed var(--line-strong)" }}>
-            <span style={{ width: 52, height: 52, borderRadius: "50%", background: "var(--accent-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="camera" size={24} color="var(--accent)" /></span>
-            <span style={{ fontSize: 15, fontWeight: 700 }}>No glimpse yet today</span>
-            <span className="muted" style={{ fontSize: 12.5, maxWidth: 250, lineHeight: 1.4 }}>{best && best.streak ? "Keep your " + best.streak + " day " + best.p.name + " streak going. One second is all it takes." : "One second is all it takes to keep your diary going."}</span>
-            <button className="pill" style={{ marginTop: 4 }} onClick={() => capture()}>Take today's glimpse</button>
-          </div>
-        )}
+        <div className="hrow between" style={{ marginTop: invites.length ? 8 : 6 }}>
+          <span className="h2">Your Projects</span>
+          {projects.length ? <button className="hrow gap2 muted" onClick={() => nav.go("projects")} style={{ background: "none", border: "none", fontSize: 12.5 }}>See all<Icon name="chevR" size={13} /></button> : null}
+        </div>
+        <ProjectRow projects={projects} />
 
         {otd.length ? <OnThisDay groups={otd} /> : null}
-        {fresh ? (
+        {!projects.length ? (
           <div className="stack gap10" style={{ marginTop: 22 }}>
             <span className="sec">How it works</span>
-            {[["Capture a moment", "Film or pick a clip, then choose the second (or few) you want to keep."], ["File it in projects", "Your Diary for every day, or a project for a trip, a pet, a goal."], ["Mash it together", "Turn a month or a year into one short film, with music if you like."]].map((t, i) => (
+            {[["Make a project", "A daily diary, a trip, a pet, a goal. Every glimpse lives in a project."], ["Capture a moment", "Film or pick a clip, then choose the second (or few) you want to keep."], ["Mash it together", "Turn a month or a year into one short film, with music if you like."]].map((t, i) => (
               <div key={i} className="hrow gap12" style={{ alignItems: "flex-start", padding: "12px 14px", borderRadius: 14, background: "var(--surface)", border: "1px solid var(--line)" }}>
                 <span style={{ width: 28, height: 28, flexShrink: 0, borderRadius: "50%", background: "var(--raised)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: "var(--accent)" }}>{i + 1}</span>
                 <span className="stack gap2"><span style={{ fontSize: 14, fontWeight: 700 }}>{t[0]}</span><span className="muted" style={{ fontSize: 12.5, lineHeight: 1.4 }}>{t[1]}</span></span>
               </div>
             ))}
           </div>
-        ) : null}
-
-        <div className="hrow between" style={{ marginTop: 26 }}>
-          <span className="h2">Your Projects</span>
-          <button className="hrow gap2 muted" onClick={() => nav.go("projects")} style={{ background: "none", border: "none", fontSize: 12.5 }}>See all<Icon name="chevR" size={13} /></button>
-        </div>
-        <div className="hscroll" style={{ marginTop: 12 }}>
-          {projects.map((x) => <ProjectCard key={x.p.id} x={x} onClick={() => nav.go("project", { projectId: x.p.id })} />)}
-          <button className="newcard" onClick={() => nav.go("projectEdit", {})}><span className="plus"><Icon name="plus" size={16} stroke={2.3} color="var(--muted)" /></span>New Project</button>
-        </div>
-
-        {recent.length ? (
-          <>
-            <div className="h2" style={{ marginTop: 26 }}>Recent Activity</div>
-            <div className="stack" style={{ marginTop: 8 }}>
-              {recent.map((e) => {
-                const p = S.project(db, e.projectId);
-                const by = S.user(db, e.authorId);
-                return (
-                  <button key={e.id} className="hrow gap12" onClick={() => nav.go("entry", { entryId: e.id })} style={{ padding: "10px 2px", background: "none", border: "none", textAlign: "left", color: "inherit" }}>
-                    <Thumb m={S.media(db, e.mediaId)} style={{ width: 46, height: 46 }} />
-                    <span className="stack gap2" style={{ minWidth: 0, flex: 1 }}>
-                      <span className="ellipsis" style={{ fontSize: 13.5, fontWeight: 600 }}>{e.note || "Untitled clip"}</span>
-                      <span className="small muted ellipsis">{e.authorId !== me.id ? S.firstName(by) + " · " : ""}{p.name} · {relDay(e.date)}</span>
-                    </span>
-                    {e.mood ? <span className="dot" style={{ background: S.moodColor(db, e.authorId, e.mood) }} title={e.mood} /> : null}
-                  </button>
-                );
-              })}
-            </div>
-          </>
         ) : null}
         <div style={{ height: 16 }} />
       </div>

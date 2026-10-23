@@ -5,6 +5,7 @@ import { fail, notify, snapshot, checkMilestones, requireMember, membership } fr
 import { str, num, bool } from "../http";
 import { isDayKey, dayKeyInTz, addDays } from "../../shared/dates";
 import { enqueue } from "../queue";
+import { clipMaxOf } from "../../shared/media";
 import type { Action } from "./types";
 
 const MOTIONS = ["in", "out", "pan", "still"];
@@ -17,7 +18,7 @@ async function myMedia(tx: Parameters<Action>[0]["db"], mediaId: string, userId:
 }
 
 // Save a new glimpse: one media item shared by every chosen project.
-export const saveCapture: Action = async ({ db, user }, a) => {
+export const saveCapture: Action = async ({ db, user, settings }, a) => {
   const mediaId = str(a.mediaId, 60);
   const projectIds = Array.isArray(a.projectIds) ? [...new Set(a.projectIds.map((x) => str(x, 60)))].slice(0, 30) : [];
   if (!projectIds.length) fail(400, "Pick at least one project.");
@@ -38,7 +39,7 @@ export const saveCapture: Action = async ({ db, user }, a) => {
       await tx.update(schema.media).set({ clipStart: 0, clipEnd: len, motion }).where(eq(schema.media.id, m.id));
     } else {
       const start = num(a.start, 0, 36000, 0);
-      const len = num(a.len, 0.5, 10, 1);
+      const len = num(a.len, 0.5, clipMaxOf(settings.clipLimit), 1);
       await tx.update(schema.media).set({ clipStart: Math.round(start * 10) / 10, clipEnd: Math.round((start + len) * 10) / 10 }).where(eq(schema.media.id, m.id));
     }
     const before = await snapshot(tx, projectIds, user.tz);
@@ -61,14 +62,14 @@ export const saveCapture: Action = async ({ db, user }, a) => {
 };
 
 // Adjust a clip's trim: just for this project (owners can do this to anyone's clip), or everywhere (own clips).
-export const saveTrim: Action = async ({ db, user }, a) => {
+export const saveTrim: Action = async ({ db, user, settings }, a) => {
   const e = await db.query.entries.findFirst({ where: eq(schema.entries.id, str(a.entryId, 60)) });
   if (!e) fail(404, "That entry wasn't found.");
   const mem = await requireMember(db, e!.projectId, user.id);
   const mine = e!.authorId === user.id;
   if (!mine && mem.role !== "OWNER") fail(403, "Only the person who filmed it, or the project owner, can trim this clip.");
   const start = Math.round(num(a.start, 0, 36000, 0) * 10) / 10;
-  const end = Math.round(num(a.end, start + 0.5, start + 10, start + 1) * 10) / 10;
+  const end = Math.round(num(a.end, start + 0.5, start + clipMaxOf(settings.clipLimit), start + 1) * 10) / 10;
   if (str(a.scope, 10) === "all" && mine) {
     await db.update(schema.media).set({ clipStart: start, clipEnd: end }).where(eq(schema.media.id, e!.mediaId));
     await db.update(schema.entries).set({ trimStart: null, trimEnd: null }).where(eq(schema.entries.mediaId, e!.mediaId));

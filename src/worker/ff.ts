@@ -69,11 +69,3 @@ export async function ffmpegVersion(): Promise<string> {
   try { const { stdout } = await run("ffmpeg", ["-version"], { timeoutMs: 10e3 }); const m = /ffmpeg version (\S+)/.exec(stdout); return "FFmpeg " + (m ? m[1].replace(/-.*/, "") : ""); }
   catch { return "FFmpeg (not found)"; }
 }
-
-let fontPath: string | null | undefined;
-export async function boldFont(): Promise<string | null> {
-  if (fontPath !== undefined) return fontPath;
-  try { const { stdout } = await run("fc-match", ["-f", "%{file}", "Inter:bold"], { timeoutMs: 10e3 }); fontPath = stdout.trim() || null; }
-  catch { fontPath = null; }
-  return fontPath;
-}

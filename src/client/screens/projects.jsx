@@ -304,7 +304,7 @@ function NewCategory({ onAdd }) {
       <div className="stack gap8">
         <span className="sec">Type</span>
         <div className="grid2" style={{ gap: 8 }}>
-          {[{ id: true, t: "Daily habit", d: "Streaks, missed days, reminder checks" }, { id: false, t: "Freestyle", d: "No streaks, film whenever" }].map((o) => (
+          {[{ id: true, t: "Daily", d: "Streaks, missed days, reminder checks" }, { id: false, t: "Freestyle", d: "No streaks, film whenever" }].map((o) => (
             <button key={String(o.id)} onClick={() => setDaily(o.id)} aria-pressed={daily === o.id} className="stack gap2" style={{ padding: 10, borderRadius: 11, background: daily === o.id ? "#211F1C" : "#161513", border: "1.5px solid " + (daily === o.id ? "var(--accent)" : "var(--line)"), color: "var(--fg)", textAlign: "left" }}><span style={{ fontSize: 13, fontWeight: 700 }}>{o.t}</span><span className="tiny muted" style={{ lineHeight: 1.3 }}>{o.d}</span></button>
           ))}
         </div>
@@ -335,7 +335,9 @@ export function ProjectEdit({ params }) {
         toast("Project saved"); nav.back();
       } else {
         const r = await act("createProject", { name: name.trim(), desc: desc.trim(), categoryId: cat });
-        toast(name.trim() + " created"); nav.replace("project", { projectId: r.projectId });
+        toast(name.trim() + " created");
+        // Opened from the capture flow: go back there so the new project can be picked.
+        if (params.back) nav.back(); else nav.replace("project", { projectId: r.projectId });
       }
     } catch (x) { /* toast shown */ }
   };
@@ -352,11 +354,12 @@ export function ProjectEdit({ params }) {
           <div className="hrow wrap gap8">
             {cats.map((c) => (
               <button key={c.id} onClick={() => setCat(c.id)} aria-pressed={c.id === cat} className="hrow gap6" style={{ padding: "9px 13px", borderRadius: 12, background: c.id === cat ? hexA(c.color, 0.14) : "var(--surface)", border: "1.5px solid " + (c.id === cat ? c.color : "var(--line)"), color: "var(--fg)", fontSize: 13, fontWeight: 600 }}>
-                <span className="dot" style={{ width: 9, height: 9, background: c.color }} />{c.name}<span className="tiny muted" style={{ fontWeight: 500 }}>{c.daily ? "daily" : "free"}</span>
+                <span className="dot" style={{ width: 9, height: 9, background: c.color }} />{c.name}
               </button>
             ))}
             <button onClick={() => setNcOpen(!ncOpen)} aria-expanded={ncOpen} className="hrow gap6" style={{ padding: "9px 13px", borderRadius: 12, background: "transparent", border: "1.5px dashed var(--line-strong)", color: "var(--muted)", fontSize: 13, fontWeight: 600 }}><Icon name="plus" size={13} stroke={2.4} />New category</button>
           </div>
+          {cats.find((c) => c.id === cat) ? <span className="small faint">{cats.find((c) => c.id === cat).daily ? "Daily: streaks, missed days and reminder checks" : "Freestyle: no streaks, film whenever"}</span> : null}
           {ncOpen ? <NewCategory onAdd={(c) => { act("addCategory", { name: c.name, color: c.color, daily: c.daily }).then((r) => { setCat(r.categoryId); setNcOpen(false); toast("Category added"); }).catch(() => {}); }} /> : null}
         </div>
         <div className="stack gap10">
@@ -409,7 +412,7 @@ export function Categories() {
             <div key={c.id} style={{ borderRadius: 16, background: "var(--surface)", border: "1px solid " + (isOpen ? "var(--accent)" : "var(--line)") }}>
               <button onClick={() => setOpen(isOpen ? null : c.id)} aria-expanded={isOpen} className="hrow gap12" style={{ width: "100%", padding: 14, background: "none", border: "none", color: "var(--fg)", textAlign: "left" }}>
                 <span className="dot" style={{ width: 14, height: 14, background: c.color }} />
-                <span className="stack gap2" style={{ flex: 1, minWidth: 0 }}><span style={{ fontSize: 15, fontWeight: 700 }}>{c.name}</span><span className="small muted">{c.daily ? "Daily habit" : "Freestyle"} · {n} {n === 1 ? "project" : "projects"}</span></span>
+                <span className="stack gap2" style={{ flex: 1, minWidth: 0 }}><span style={{ fontSize: 15, fontWeight: 700 }}>{c.name}</span><span className="small muted">{c.daily ? "Daily" : "Freestyle"} · {n} {n === 1 ? "project" : "projects"}</span></span>
                 {c.isDefault ? <span className="tag">Default</span> : null}
                 <Icon name="chevD" size={16} color="var(--faint)" style={{ transform: isOpen ? "rotate(180deg)" : "none" }} />
               </button>
@@ -420,7 +423,7 @@ export function Categories() {
                   <div className="stack gap8">
                     <span className="sec">Type</span>
                     <div className="grid2" style={{ gap: 8 }}>
-                      {[{ id: true, t: "Daily habit", d: "Streaks & missed days" }, { id: false, t: "Freestyle", d: "No streaks" }].map((o) => (
+                      {[{ id: true, t: "Daily", d: "Streaks & missed days" }, { id: false, t: "Freestyle", d: "No streaks" }].map((o) => (
                         <button key={String(o.id)} disabled={c.isDefault} onClick={() => patch(c.id, { daily: o.id })} aria-pressed={c.daily === o.id} className="stack gap2" style={{ padding: 10, borderRadius: 11, background: c.daily === o.id ? "#211F1C" : "#161513", border: "1.5px solid " + (c.daily === o.id ? "var(--accent)" : "var(--line)"), color: "var(--fg)", textAlign: "left", opacity: c.isDefault && c.daily !== o.id ? 0.4 : 1 }}><span style={{ fontSize: 13, fontWeight: 700 }}>{o.t}</span><span className="tiny muted">{o.d}</span></button>
                       ))}
                     </div>

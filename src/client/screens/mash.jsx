@@ -3,7 +3,11 @@ import { useApp, live } from "../store.jsx";
 import { Icon } from "../icons.jsx";
 import { Screen, TopBar, Steps, Sheet, Thumb, ClipView, PlayBadge, Menu, Choice, Opts, Toggle, ToggleRow, Stepper, Section, useDragList, move } from "../ui.jsx";
 import * as S from "../sel.js";
-import { QUALITY, OUTPUT } from "../../shared/mash";
+import { QUALITY, OUTPUT, stampDate as shStampDate, stampLines as shStampLines } from "../../shared/mash";
+import { STAMP_DEFAULT, LABEL_DEFAULT, cleanStamp, cleanLabel, matched, labelText } from "../../shared/textstyle";
+import { TextPreview, TextStyleControls, FontPicker } from "./textstyle.jsx";
+import { barsFrom } from "../../shared/peaks";
+import { usePreview } from "./music.jsx";
 import { MONTH, MON, parseKey, todayKey, addDays, fullDay, dayLabel, monthDay, fmtDur, shortDate, rel, uid, hexA, gb } from "../util.js";
 
 const { useState, useEffect, useRef } = React;
@@ -24,63 +28,58 @@ export function clipBox(orient, shape, fill) {
   if (Math.abs(ca - ba) < 0.01 || fill === "crop") return { inset: true };
   return ca > ba ? { w: "100%", h: (ba / ca * 100) + "%" } : { w: (ca / ba * 100) + "%", h: "100%" };
 }
-// Date stamp burned into each clip of a mash.
-export const STAMP_DEFAULT = { on: true, show: "date", format: "short", pos: "tr", style: "pill", size: "m" };
-export const stampOf = (m) => m.stamp || Object.assign({}, STAMP_DEFAULT, { on: m.overlay !== false });
-export function stampDate(k, format) {
-  const d = parseKey(k);
-  if (format === "long") return d.getDate() + " " + MONTH[d.getMonth()] + " " + d.getFullYear();
-  if (format === "num") return d.getDate() + "/" + (d.getMonth() + 1) + "/" + String(d.getFullYear()).slice(2);
-  return dayLabel(k);
-}
-export function Stamp({ st, e, i, scale }) {
-  if (!st || !st.on || !e) return null;
-  const k = scale || 1;
-  const fs = ({ s: 9.5, m: 11.5, l: 15 }[st.size] || 11.5) * k;
-  const line1 = st.show === "day" ? "Day " + (i + 1) : stampDate(e.date, st.format);
-  const line2 = st.show === "dateNote" && e.note ? e.note : st.show === "day" ? stampDate(e.date, st.format) : null;
-  const off = 12 * k;
-  const pos = { position: "absolute", maxWidth: "70%", [st.pos[0] === "t" ? "top" : "bottom"]: off, [st.pos[1] === "l" ? "left" : "right"]: off, textAlign: st.pos[1] === "l" ? "left" : "right", pointerEvents: "none", color: "#fff", lineHeight: 1.25 };
-  const look = st.style === "pill" ? { padding: (3 * k) + "px " + (8 * k) + "px", borderRadius: 8 * k, background: "rgba(0,0,0,0.45)" }
-    : st.style === "bold" ? { textShadow: "0 1px 6px rgba(0,0,0,0.7)", textTransform: "uppercase", letterSpacing: "0.06em" }
-    : { textShadow: "0 1px 4px rgba(0,0,0,0.75)" };
-  return (
-    <span style={Object.assign(pos, look)}>
-      <span style={{ display: "block", fontSize: fs * (st.style === "bold" ? 1.25 : 1), fontWeight: st.style === "bold" ? 800 : 700 }}>{line1}</span>
-      {line2 ? <span className="ellipsis" style={{ display: "block", fontSize: fs * 0.88, fontWeight: 500, opacity: 0.9 }}>{line2}</span> : null}
-    </span>
-  );
-}
+// Text on each clip of a mash: the date stamp and the song title.
+export const stampOf = (m) => cleanStamp(m.stamp || { on: m.overlay !== false });
+export const stampDate = (k, format) => shStampDate(k, format);
 
-function StampCard({ d, set, sample, db, me }) {
+// One preview for both, with a tab for each one's settings.
+function TextCard({ d, set, sample, db, me }) {
   const { act, toast } = useApp();
-  const st = d.stamp;
-  const put = (o) => set({ stamp: Object.assign({}, st, o) });
-  const sh = SHAPES[d.shape];
-  const box = d.shape === "landscape" ? { w: 240, h: 135 } : d.shape === "square" ? { w: 170, h: 170 } : { w: 132, h: 235 };
+  const [tab, setTab] = useState("stamp");
+  const [fontFor, setFontFor] = useState(null);
+  const st = cleanStamp(d.stamp), lb = cleanLabel(d.label);
+  const putStamp = (o) => set({ stamp: Object.assign({}, st, o) });
+  const putLabel = (o) => set({ label: Object.assign({}, lb, o) });
+  const look = lb.match ? matched(lb, st) : lb;
+  const box = d.shape === "landscape" ? { w: 320, h: 180 } : d.shape === "square" ? { w: 240, h: 240 } : { w: 198, h: 352 };
   const md = sample ? S.media(db, sample.mediaId) : null;
   const pf = S.prefs(db, me.id);
-  const isDefault = JSON.stringify(pf.stamp || STAMP_DEFAULT) === JSON.stringify(st);
+  const isDefault = JSON.stringify(cleanStamp(pf.stamp)) === JSON.stringify(st) && JSON.stringify(cleanLabel(pf.label)) === JSON.stringify(lb);
+  const t0 = d.tracks.length ? S.track(db, d.tracks[0].trackId) : null;
+  const music = !!t0 && d.audio !== "clips";
+  const e = sample || { date: todayKey(), note: "A note from this day" };
+  const [l1, l2] = shStampLines(st, e.date, e.note || "", 0);
+  const items = (st.on ? [{ look: st, lines: [l1, l2 || ""] }] : []).concat(music && d.musicLabel !== false ? [{ look, lines: [labelText(lb, t0.title, t0.artist)] }] : []);
   return (
     <div className="card stack gap16">
-      <ToggleRow title="Date stamp" sub={st.on ? "Shown on every clip" : "No text on the clips"} on={st.on} onChange={(v) => put({ on: v })} />
-      {st.on ? (
-        <>
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            <div style={{ position: "relative", width: box.w, height: box.h, borderRadius: 10, overflow: "hidden", background: md ? (md.thumb ? "url(" + md.thumb + ") center/cover, " + md.grad : md.grad) : "linear-gradient(160deg,#C98A4B,#584E75)" }}>
-              <Stamp st={st} e={sample || { date: todayKey(), note: "A note from this day" }} i={0} scale={d.shape === "portrait" ? 0.7 : 0.72} />
-            </div>
-          </div>
-          <div className="stack gap6"><span className="sec">Show</span><Opts value={st.show} onChange={(v) => put({ show: v })} options={[{ id: "date", label: "Date" }, { id: "dateNote", label: "Date + note" }, { id: "day", label: "Day count" }]} /></div>
-          <div className="stack gap6"><span className="sec">Date format</span><Opts value={st.format} onChange={(v) => put({ format: v })} options={[{ id: "short", label: stampDate(todayKey(), "short") }, { id: "long", label: stampDate(todayKey(), "long").replace(/ \d{4}$/, "") + "…" }, { id: "num", label: stampDate(todayKey(), "num") }]} /></div>
-          <div className="stack gap6"><span className="sec">Position</span><Opts value={st.pos} onChange={(v) => put({ pos: v })} options={[{ id: "tl", label: "↖ Top" }, { id: "tr", label: "Top ↗" }, { id: "bl", label: "↙ Bottom" }, { id: "br", label: "Bottom ↘" }]} /></div>
-          <div className="grid2" style={{ gap: 12 }}>
-            <div className="stack gap6"><span className="sec">Style</span><Opts value={st.style} onChange={(v) => put({ style: v })} options={[{ id: "pill", label: "Pill" }, { id: "plain", label: "Plain" }, { id: "bold", label: "Bold" }]} /></div>
-            <div className="stack gap6"><span className="sec">Size</span><Opts value={st.size} onChange={(v) => put({ size: v })} options={[{ id: "s", label: "S" }, { id: "m", label: "M" }, { id: "l", label: "L" }]} /></div>
-          </div>
-        </>
-      ) : null}
-      <button className="chipbtn" disabled={isDefault} style={{ alignSelf: "flex-start", opacity: isDefault ? 0.5 : 1 }} onClick={() => { act("setPrefs", { stamp: st }).then(() => toast("Saved as your default date stamp")).catch(() => {}); }}>{isDefault ? "This is your default" : "Save as my default"}</button>
+      <div className="stack gap4"><span style={{ fontSize: 15, fontWeight: 700 }}>Text on the video</span><span className="small muted">The preview is to scale, in the fonts you pick.</span></div>
+      <div style={{ display: "flex", justifyContent: "center" }}>
+        <TextPreview items={items} w={box.w} h={box.h} bg={md ? (md.thumb ? "url(" + md.thumb + ") center/cover, " + md.grad : md.grad) : "linear-gradient(160deg,#C98A4B,#584E75)"} />
+      </div>
+      <Opts value={tab} onChange={setTab} options={[{ id: "stamp", label: "Date stamp" }, { id: "label", label: "Song title" }]} />
+      {tab === "stamp" ? (
+        <div className="stack gap16">
+          <ToggleRow title="Date stamp" sub={st.on ? "Shown on every clip" : "No date on the clips"} on={st.on} onChange={(v) => putStamp({ on: v })} />
+          {st.on ? (
+            <>
+              <div className="stack gap6"><span className="sec">Show</span><Opts value={st.show} onChange={(v) => putStamp({ show: v })} options={[{ id: "date", label: "Date" }, { id: "dateNote", label: "Date + note" }, { id: "day", label: "Day count" }]} /></div>
+              <div className="stack gap6"><span className="sec">Date format</span><Opts value={st.format} onChange={(v) => putStamp({ format: v })} options={[{ id: "short", label: stampDate(todayKey(), "short") }, { id: "long", label: stampDate(todayKey(), "long").replace(/ \d{4}$/, "") + "…" }, { id: "num", label: stampDate(todayKey(), "num") }]} /></div>
+              <TextStyleControls look={st} set={(v) => set({ stamp: v })} onFont={() => setFontFor("stamp")} />
+            </>
+          ) : null}
+        </div>
+      ) : (
+        <div className="stack gap16" style={{ opacity: music ? 1 : 0.55 }}>
+          <ToggleRow title="Song title" sub={!t0 ? "Add music below to show its title" : d.audio === "clips" ? "Music is off in Sound below" : d.musicLabel !== false ? "Shown in a corner while each track plays" : "No song title on the video"} on={d.musicLabel !== false} onChange={(v) => set({ musicLabel: v })} />
+          <div className="stack gap6"><span className="sec">Shows</span><Opts value={lb.show} onChange={(v) => putLabel({ show: v })} options={[{ id: "title", label: "Title" }, { id: "titleArtist", label: "Title – Artist" }, { id: "note", label: "♪ Title" }]} /></div>
+          <ToggleRow title="Match date stamp style" sub={lb.match ? "Same font, colours and box as the date stamp" : "Style the song title on its own"} on={lb.match} onChange={(v) => putLabel(v ? { match: true } : Object.assign(matched(lb, st), { match: false }))} />
+          {lb.match ? <div className="stack gap6"><span className="sec">Position</span><Opts value={lb.pos} onChange={(v) => putLabel({ pos: v })} options={[{ id: "tl", label: "↖ Top" }, { id: "tr", label: "Top ↗" }, { id: "bl", label: "↙ Bottom" }, { id: "br", label: "Bottom ↘" }]} /></div>
+            : <TextStyleControls look={lb} set={(v) => set({ label: Object.assign({}, v, { match: false }) })} onFont={() => setFontFor("label")} />}
+          {st.on && lb.pos === st.pos ? <span className="small faint">Both are in the same corner, so they stack: the date stamp nearest the edge.</span> : null}
+        </div>
+      )}
+      <button className="chipbtn" disabled={isDefault} style={{ alignSelf: "flex-start", opacity: isDefault ? 0.5 : 1 }} onClick={() => { act("setPrefs", { stamp: st, label: lb }).then(() => toast("Saved as your default text style")).catch(() => {}); }}>{isDefault ? "This is your default" : "Save as my default"}</button>
+      <FontPicker open={!!fontFor} onClose={() => setFontFor(null)} value={fontFor === "label" ? lb.font : st.font} onPick={(f) => (fontFor === "label" ? set({ label: Object.assign({}, lb, { font: f, match: false }) }) : putStamp({ font: f }))} />
     </div>
   );
 }
@@ -111,7 +110,7 @@ function initDraft(db, me, params) {
   const pid = params.projectId || (base && base.projectId) || (mine[0] && mine[0].p.id);
   const d = {
     projectId: pid, memberId: params.memberId || (base && base.memberId) || null, range: params.range || (base && base.range) || "this", custom: base && base.custom || null,
-    excluded: {}, title: null, shape: "portrait", fill: S.prefs(db, me.id).fill, clipMode: "trimmed", cap: 1, overlay: true, stamp: Object.assign({}, STAMP_DEFAULT, S.prefs(db, me.id).stamp || {}),
+    excluded: {}, title: null, shape: "portrait", fill: S.prefs(db, me.id).fill, clipMode: "trimmed", cap: 1, overlay: true, stamp: cleanStamp(S.prefs(db, me.id).stamp || STAMP_DEFAULT), label: cleanLabel(S.prefs(db, me.id).label || LABEL_DEFAULT),
     tracks: [], crossfade: 2, whenEnds: "loop", audio: "both", level: 40, sync: "off", beats: 1, stretch: true, shared: false, remashOf: null, musicLabel: true, quality: db.server.mashQuality || "high"
   };
   if (base) {
@@ -119,7 +118,8 @@ function initDraft(db, me, params) {
     d.stretch = base.stretch !== false;
     d.musicLabel = base.musicLabel !== false;
     d.quality = QUALITY[base.quality] ? base.quality : "high";
-    d.stamp = Object.assign({}, stampOf(base));
+    d.stamp = stampOf(base);
+    d.label = cleanLabel(base.label || LABEL_DEFAULT);
     d.tracks = JSON.parse(JSON.stringify(base.tracks));
     d.remashOf = base.id; d.title = base.title;
     const r = S.rangeFor(d.range, d.custom);
@@ -256,7 +256,7 @@ export function MashStep2() {
         </div>
         {x && x.cat.daily && !d.memberId ? (
           <div className="stack gap10">
-            <div className="hrow between" style={{ alignItems: "baseline" }}><span className="sec">Missed days · {missed.length}</span><span className="small faint">Daily habit only</span></div>
+            <div className="hrow between" style={{ alignItems: "baseline" }}><span className="sec">Missed days · {missed.length}</span><span className="small faint">Daily projects only</span></div>
             {missed.length ? <span className="small faint" style={{ marginTop: -4 }}>Got a clip from one of these days? Add it before you render.</span> : <span className="small" style={{ color: "var(--ok)" }}>No missed days in this range.</span>}
             {missed.length ? (
               <div className="card flush list">
@@ -309,7 +309,8 @@ export function MusicPicker({ open, onClose, list, onAdd, bpm }) {
   const { db, me, nav } = useApp();
   const [q, setQ] = useState("");
   const [f, setF] = useState("all");
-  const [playing, setPlaying] = useState(null);
+  const pv = usePreview();
+  const playing = pv.playing;
   const tracks = db.tracks.filter((t) => t.status === "ready").filter((t) => !q || (t.title + t.artist).toLowerCase().indexOf(q.toLowerCase()) >= 0).filter((t) => f === "all" || (f === "mine" ? t.addedBy === me.id : Math.abs(t.bpm - (bpm || 96)) <= 8));
   return (
     <Sheet open={open} onClose={onClose} title="Add a track" right={<button className="link" style={{ fontSize: 14, fontWeight: 700 }} onClick={onClose}>Done</button>} tall>
@@ -320,7 +321,7 @@ export function MusicPicker({ open, onClose, list, onAdd, bpm }) {
           const idx = list.indexOf(t.id); const pl = playing === t.id;
           return (
             <div key={t.id} className="hrow gap12" style={{ padding: "10px 12px", borderRadius: 14, background: "#1F1E1B", border: "1px solid " + (pl ? "var(--accent)" : "var(--line)") }}>
-              <button onClick={() => setPlaying(pl ? null : t.id)} aria-label={(pl ? "Pause " : "Preview ") + t.title} style={{ width: 36, height: 36, flexShrink: 0, borderRadius: "50%", background: pl ? "var(--accent)" : "#2A2825", border: "none", display: "flex", alignItems: "center", justifyContent: "center", color: pl ? "var(--accent-ink)" : "var(--fg)" }}><Icon name={pl ? "pause" : "play"} size={14} /></button>
+              <button onClick={() => pv.toggle(t)} aria-label={(pl ? "Pause " : "Preview ") + t.title} style={{ width: 36, height: 36, flexShrink: 0, borderRadius: "50%", background: pl ? "var(--accent)" : "#2A2825", border: "none", display: "flex", alignItems: "center", justifyContent: "center", color: pl ? "var(--accent-ink)" : "var(--fg)" }}><Icon name={pl ? "pause" : "play"} size={14} /></button>
               <span className="stack gap2" style={{ flex: 1, minWidth: 0 }}><span className="ellipsis" style={{ fontSize: 14, fontWeight: 700 }}>{t.title}</span><span className="small muted ellipsis">{t.artist} · {fmtDur(t.duration)} · {t.bpm} BPM</span></span>
               {idx >= 0 ? <span className="tag ok" style={{ fontSize: 12, padding: "7px 11px" }}>✓ #{idx + 1}</span> : <button className="chipbtn" style={{ background: "var(--accent)", color: "var(--accent-ink)", border: "none", fontWeight: 800 }} onClick={() => onAdd(t.id)}>+ Add</button>}
             </div>
@@ -364,7 +365,7 @@ export function MashStep3() {
     try {
       await act("createMash", {
         projectId: d.projectId, memberId: d.memberId, title: title.trim() || defaultTitle(db, d), defaultTitle: defaultTitle(db, d), range: d.range, custom: d.custom, entryIds: picked.map((e) => e.id), excluded: d.excluded, remashOf: d.remashOf, shared: !!d.shared,
-        settings: { shape: d.shape, fill: d.fill, clipMode: d.clipMode, cap: d.cap, stamp: d.stamp, tracks: d.tracks, crossfade: d.crossfade, whenEnds: d.whenEnds, audio: d.audio, level: d.level, sync: d.sync, beats: d.beats, stretch: d.stretch !== false, musicLabel: d.musicLabel !== false, quality: d.quality }
+        settings: { shape: d.shape, fill: d.fill, clipMode: d.clipMode, cap: d.cap, stamp: d.stamp, label: d.label, tracks: d.tracks, crossfade: d.crossfade, whenEnds: d.whenEnds, audio: d.audio, level: d.level, sync: d.sync, beats: d.beats, stretch: d.stretch !== false, musicLabel: d.musicLabel !== false, quality: d.quality }
       });
     } catch (e) { setRendering(false); return; }
     toast("Rendering “" + (title.trim() || defaultTitle(db, d)) + "”. We'll let you know when it's ready.");
@@ -409,7 +410,7 @@ export function MashStep3() {
             <div style={{ paddingLeft: 32 }}><Opts value={d.clipMode === "cap" ? d.cap : null} onChange={(v) => set({ clipMode: "cap", cap: v })} options={[0.5, 1, 2, 3].map((c) => ({ id: c, label: c + "s" }))} /></div>
           </div>
         </Section>
-        <StampCard d={d} set={set} sample={picked.find((e) => e.note) || picked[0]} db={db} me={me} />
+        <TextCard d={d} set={set} sample={picked.find((e) => e.note) || picked[0]} db={db} me={me} />
         {x && x.shared ? <div className="card"><ToggleRow title="Share with project" sub={"Everyone in " + x.p.name + " can watch it. Off keeps it private to you."} on={d.shared} onChange={(v) => set({ shared: v })} /></div> : null}
 
         <div className="stack gap12">
@@ -487,17 +488,14 @@ export function MashStep3() {
   );
 }
 
-function wave(n, seed) { const out = []; for (let i = 0; i < n; i++) out.push(Math.min(1, 0.22 + 0.42 * Math.abs(Math.sin(i * 0.29 + seed)) + 0.3 * Math.abs(Math.sin(i * 0.91 + seed * 2.1)))); return out; }
 
 export function TrackSection({ params }) {
   const { db, nav, mashDraft, setMashDraft, me } = useApp();
-  const [preview, setPreview] = useState(false);
-  const [ph, setPh] = useState(0);
+  const pv = usePreview();
   const d = mashDraft;
   const i = params.index || 0;
   const tr = d && d.tracks[i];
   const t = tr && S.track(db, tr.trackId);
-  useEffect(() => { if (!preview) return; const s = Date.now(); const id = setInterval(() => { const e = (Date.now() - s) / 1000; setPh(e); if (e > 8) setPreview(false); }, 100); return () => clearInterval(id); }, [preview]);
   if (!t) return <Screen><TopBar title="Track" /></Screen>;
   const { picked } = selection(db, d);
   const secs = estimate(db, d, picked);
@@ -508,7 +506,10 @@ export function TrackSection({ params }) {
   const snapT = (x) => (snap ? offset + Math.round((x - offset) / beat) * beat : x);
   const clampT = (x) => Math.max(0, Math.min(Math.max(0, dur - 1), x));
   const start = tr.start, end = Math.min(dur, start + segLen);
-  const n = 84, per = dur / n, bars = wave(n, t.bpm / 10);
+  // Preview plays the real track from the chosen start, for as long as it plays in the mash.
+  const preview = pv.playing === t.id;
+  const ph = preview ? Math.max(0, pv.pos - start) : 0;
+  const n = 84, per = dur / n, real = barsFrom(t.peaks, n), bars = real.length ? real : Array.from({ length: n }, () => 0.12);
   const fmt = (x) => { const m = Math.floor(x / 60); const s = x - m * 60; return m + ":" + (s < 10 ? "0" : "") + s.toFixed(1); };
   const W = 320, H = 44, xIn = Math.max(0.001, tr.fadeIn / Math.max(1, segLen)) * W, xOut = W - Math.max(0.001, tr.fadeOut / Math.max(1, segLen)) * W;
   return (
@@ -520,7 +521,7 @@ export function TrackSection({ params }) {
           <div style={{ position: "relative" }}>
             <div className="hrow" style={{ gap: 1, height: 72 }}>
               {bars.map((v, k) => { const tt = k * per; const inSel = tt + per > start && tt < end; const fade = inSel && ((tr.fadeIn && tt < start + tr.fadeIn) || (tr.fadeOut && tt > end - tr.fadeOut)); return (
-                <button key={k} aria-label={"Start at " + fmt(tt)} onClick={() => setTr({ start: clampT(snapT(tt)) })} style={{ flex: 1, height: "100%", padding: 0, border: "none", background: "transparent", display: "flex", alignItems: "center" }}><span style={{ width: "100%", height: Math.round(v * 100) + "%", borderRadius: 1, background: inSel ? "var(--accent)" : "var(--line-strong)", opacity: fade ? 0.45 : 1 }} /></button>); })}
+                <button key={k} aria-label={"Start at " + fmt(tt)} onClick={() => { const s2 = clampT(snapT(tt)); setTr({ start: s2 }); if (preview) pv.seek(t, s2, Math.min(dur, s2 + segLen)); }} style={{ flex: 1, height: "100%", padding: 0, border: "none", background: "transparent", display: "flex", alignItems: "center" }}><span style={{ width: "100%", height: Math.max(6, Math.round(v * 100)) + "%", borderRadius: 1, background: inSel ? "var(--accent)" : "var(--line-strong)", opacity: fade ? 0.45 : 1 }} /></button>); })}
             </div>
             <div style={{ position: "absolute", top: -6, bottom: -6, left: (start / dur * 100) + "%", width: 2, marginLeft: -1, background: "var(--fg)", pointerEvents: "none" }} />
             {preview ? <div style={{ position: "absolute", top: 0, bottom: 0, left: ((start + ph) / dur * 100) + "%", width: 2, background: "#fff", opacity: 0.7, pointerEvents: "none" }} /> : null}
@@ -528,7 +529,7 @@ export function TrackSection({ params }) {
           <div className="hrow between tiny" style={{ marginTop: 8, color: "var(--ghost)" }}>{[0, 0.25, 0.5, 0.75, 1].map((f) => <span key={f}>{fmtDur(dur * f)}</span>)}</div>
         </div>
         <div className="hrow gap14 card">
-          <button aria-label={preview ? "Stop preview" : "Preview section"} onClick={() => { setPh(0); setPreview(!preview); }} style={{ width: 46, height: 46, flexShrink: 0, borderRadius: "50%", background: "var(--accent)", border: "none", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-ink)" }}><Icon name={preview ? "pause" : "play"} size={18} /></button>
+          <button aria-label={preview ? "Stop preview" : "Preview section"} onClick={() => (preview ? pv.toggle(t) : pv.seek(t, start, end))} style={{ width: 46, height: 46, flexShrink: 0, borderRadius: "50%", background: "var(--accent)", border: "none", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-ink)" }}><Icon name={preview ? "pause" : "play"} size={18} /></button>
           <span className="stack gap2" style={{ flex: 1 }}><span className="num" style={{ fontSize: 22, fontWeight: 700 }}>From {fmt(start)}</span><span className="small muted">Plays to {fmt(end)} · {snap ? "on beat " + (Math.round((start - offset) / beat) + 1) : "free position"}</span></span>
           <button className="chipbtn" style={{ width: 34, padding: "7px 0" }} aria-label="One beat earlier" onClick={() => setTr({ start: clampT(start - beat) })}>‹</button>
           <button className="chipbtn" style={{ width: 34, padding: "7px 0" }} aria-label="One beat later" onClick={() => setTr({ start: clampT(start + beat) })}>›</button>

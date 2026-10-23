@@ -150,13 +150,19 @@ textarea.input { resize: none; line-height: 1.45; }
 .thumb { position: relative; border-radius: 10px; overflow: hidden; background: var(--surface); background-size: cover; background-position: center; flex-shrink: 0; }
 .thumb img, .thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .shade { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.72), rgba(0,0,0,0.05) 55%); pointer-events: none; }
-.pcard { display: block; position: relative; flex-shrink: 0; width: 148px; height: 180px; border-radius: 16px; overflow: hidden; color: var(--fg); text-decoration: none; border: none; padding: 0; text-align: left; }
-.pcard .cat { position: absolute; top: 10px; left: 10px; padding: 2px 8px; border-radius: 20px; background: rgba(0,0,0,0.45); font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; }
-.pcard .streak { position: absolute; top: 9px; right: 9px; display: flex; align-items: center; gap: 3px; padding: 3px 7px 3px 6px; border-radius: 20px; background: rgba(0,0,0,0.5); font-size: 10.5px; font-weight: 700; }
-.pcard .foot { position: absolute; left: 12px; right: 12px; bottom: 12px; }
-.pcard .name { font-size: 14.5px; font-weight: 700; }
-.pcard .meta { font-size: 11px; color: var(--fg-2); margin-top: 2px; }
-.newcard { flex-shrink: 0; width: 148px; height: 180px; border-radius: 16px; border: 1.5px dashed var(--line-strong); background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.pcard { display: block; position: relative; flex: 0 0 calc(100% - 16px); aspect-ratio: 5 / 6; max-height: 58vh; border-radius: 20px; overflow: hidden; color: var(--fg); text-decoration: none; border: none; padding: 0; text-align: left; scroll-snap-align: start; }
+.pcard .cat { position: absolute; top: 14px; left: 14px; padding: 3px 10px; border-radius: 20px; background: rgba(0,0,0,0.45); font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; }
+.pcard .streak { position: absolute; top: 13px; right: 13px; display: flex; align-items: center; gap: 4px; padding: 4px 9px 4px 8px; border-radius: 20px; background: rgba(0,0,0,0.5); font-size: 12px; font-weight: 700; }
+.pcard .foot { position: absolute; left: 18px; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 4px; }
+.pcard .name { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+.pcard .meta { font-size: 12.5px; color: var(--fg-2); min-width: 0; }
+.newcard { flex: 0 0 calc(100% - 16px); aspect-ratio: 5 / 6; max-height: 58vh; border-radius: 20px; border: 1.5px dashed var(--line-strong); background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; color: var(--muted); font-size: 15px; font-weight: 700; text-align: center; scroll-snap-align: start; }
+.newcard .plus { width: 52px; height: 52px; }
+.newcard.first { flex-basis: 100%; background: radial-gradient(circle at 50% 30%, var(--accent-soft), transparent 65%), var(--surface-2); color: var(--fg); }
+.newcard.first .plus { width: 64px; height: 64px; background: var(--accent); }
+.newcard.first .t { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+.newcard .d { font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--muted); max-width: 240px; }
+.hscroll.snap { scroll-snap-type: x mandatory; scroll-padding: 0 20px; }
 .plus { width: 34px; height: 34px; border-radius: 50%; background: #232220; display: flex; align-items: center; justify-content: center; }
 
 /* Tab bar */
@@ -169,7 +175,7 @@ textarea.input { resize: none; line-height: 1.45; }
 .overlay { position: absolute; inset: 0; z-index: 40; display: flex; flex-direction: column; justify-content: flex-end; }
 .overlay .scrim, .dialog-wrap .scrim { position: absolute; inset: 0; background: rgba(0,0,0,0.6); border: none; padding: 0; cursor: default; animation: fade 0.15s ease-out; }
 .sheet { position: relative; max-height: 92%; display: flex; flex-direction: column; background: var(--surface-2); border-top: 1px solid var(--line); border-radius: 22px 22px 0 0; animation: rise 0.2s ease-out; }
-.sheet .grab { display: flex; justify-content: center; padding-top: 8px; }
+.sheet .grab { display: flex; justify-content: center; padding: 8px 0 10px; margin-bottom: -10px; cursor: grab; }
 .sheet .grab span { width: 38px; height: 5px; border-radius: 3px; background: var(--line-strong); }
 .sheet .sheet-head { padding: 12px 20px 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .sheet .sheet-title { font-size: 17px; font-weight: 700; }

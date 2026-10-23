@@ -25,7 +25,7 @@ export const DEFAULT_MOODS = [
 ] as const;
 export const DEFAULT_PREFS = { accent: "#E8A33D", badge: "dot", milestones: true, fill: "blur", onThisDay: true };
 
-// Everyone starts with Diary + Freestyle categories, a Diary project, default moods and two reminders.
+// Everyone starts with Diary + Freestyle categories, default moods and two reminders. Their first project is their own to make.
 export async function createUserBasics(tx: Tx, userId: string, emailOk: boolean) {
   const diaryCat = id("c_"), freeCat = id("c_");
   await tx.insert(schema.categories).values([
@@ -33,14 +33,11 @@ export async function createUserBasics(tx: Tx, userId: string, emailOk: boolean)
     { id: freeCat, userId, name: "Freestyle", color: "#5BA3A0", daily: false, isDefault: true, sort: 1 }
   ]);
   await tx.insert(schema.moods).values(DEFAULT_MOODS.map(([label, color], i) => ({ id: id("md_"), userId, label, color, preset: true, sort: i })));
-  const pid = id("p_");
-  await tx.insert(schema.projects).values({ id: pid, name: "Diary", ownerId: userId });
-  await tx.insert(schema.members).values({ id: id("mb_"), projectId: pid, userId, role: "OWNER", status: "ACTIVE", categoryId: diaryCat, pinned: true, joinedAt: new Date(), lastViewedAt: new Date() });
   await tx.insert(schema.reminders).values([
     { id: id("r_"), userId, time: "08:00", message: "Don't forget today's glimpse!", rule: "always", email: emailOk, inapp: true, on: true },
     { id: id("r_"), userId, time: "17:00", message: "No glimpse yet today, there's still time.", rule: "check", email: false, inapp: true, on: true }
   ]);
-  return { diaryCat, freeCat, diaryProject: pid };
+  return { diaryCat, freeCat };
 }
 
 export async function freestyleCategory(tx: Tx, userId: string): Promise<string | null> {

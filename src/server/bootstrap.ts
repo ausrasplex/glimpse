@@ -17,7 +17,8 @@ export function mediaOut(m: typeof schema.media.$inferSelect, mine: boolean) {
     strip: m.stripKey ? `/api/files/media/${m.id}/strip` : null,
     duration: m.duration, clipStart: m.clipStart, clipEnd: m.clipEnd, orient: m.orient, motion: m.motion,
     converted: m.converted ? m.codec || "original" : null, immichId: m.immichAssetId,
-    width: m.width, height: m.height, size: mine ? m.size + m.derivedSize : 0, createdAt: ms(m.createdAt)
+    width: m.width, height: m.height, size: mine ? m.size + m.derivedSize : 0, createdAt: ms(m.createdAt),
+    takenDay: m.takenDay ?? null, takenAt: m.takenAt ? ms(m.takenAt) : null
   };
 }
 
@@ -113,7 +114,7 @@ export async function buildBootstrap(me: User) {
     media: mediaRows.map((m) => mediaOut(m, m.ownerId === me.id)),
     entries: entries.map((e) => ({ id: e.id, projectId: e.projectId, mediaId: e.mediaId, authorId: e.authorId, date: e.date, createdAt: ms(e.createdAt), note: e.note, mood: e.mood, trim: e.trimStart != null && e.trimEnd != null ? { start: e.trimStart, end: e.trimEnd } : null })),
     mashes: mashes.map(mashOut),
-    tracks: tracks.map((t) => ({ id: t.id, title: t.title, artist: t.artist, duration: t.duration, bpm: t.bpm, detectedBpm: t.detectedBpm, addedBy: t.addedBy, addedAt: ms(t.addedAt), size: t.size, format: t.format, lufs: t.lufs, status: t.status, src: t.playKey || t.key ? `/api/files/track/${t.id}` : null })),
+    tracks: tracks.map((t) => ({ id: t.id, title: t.title, artist: t.artist, duration: t.duration, bpm: t.bpm, detectedBpm: t.detectedBpm, addedBy: t.addedBy, addedAt: ms(t.addedAt), size: t.size, format: t.format, lufs: t.lufs, status: t.status, peaks: t.peaks ?? null, src: t.playKey || t.key ? `/api/files/track/${t.id}` : null })),
     removalRequests: removalRequests.map((r) => ({ id: r.id, trackId: r.trackId, userId: r.userId, reason: r.reason, status: r.status, at: ms(r.createdAt) })),
     invites: invites.map((i) => ({ id: i.id, email: i.email, invitedBy: i.invitedBy, projectId: i.projectId, status: i.status, at: ms(i.createdAt), expiresAt: ms(i.expiresAt), acceptedAt: ms(i.acceptedAt) })),
     reminders: reminders.map((r) => ({ id: r.id, userId: r.userId, time: r.time, message: r.message, rule: r.rule, days: r.days, email: r.email, inapp: r.inapp, on: r.on })),

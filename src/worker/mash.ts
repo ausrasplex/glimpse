@@ -7,7 +7,9 @@ import { downloadTo, putFile, keys, deleteKeys } from "../server/storage";
 import { getSettings } from "../server/settings";
 import { notify } from "../server/core";
 import { QUALITY, qualityOf, OUTPUT, STAMP_DEFAULT, segmentLen, extendWindow, type MashSettings } from "../shared/mash";
-import { ffmpeg, probe, boldFont } from "./ff";
+import { ffmpeg, probe } from "./ff";
+import { ensureFont, fontPath, fallbackNotes } from "../server/fonts";
+import { cleanStamp, cleanLabel, matched, DEFAULT_FONT } from "../shared/textstyle";
 import { tmpDir } from "./media";
 import { renderSegment, concatSegments, buildBed, mixFinal, type Segment, type BedTrack } from "./render";
 
@@ -38,7 +40,13 @@ export async function renderMash(mashId: string) {
 
     const res = OUTPUT[s.maxRes] || OUTPUT["1080"];
     const [W, H] = res[st.shape] || res.portrait;
-    const font = await boldFont();
+    // Text looks and their fonts. A font that can't be had (offline, downloads off) falls back to Inter.
+    const stamp = cleanStamp(st.stamp);
+    const rawLabel = cleanLabel(st.label);
+    const label = rawLabel.match ? matched(rawLabel, stamp) : rawLabel;
+    const base = (await fontPath(DEFAULT_FONT))!;
+    const fontFor = async (family: string) => (await ensureFont(family, s.googleFonts).catch(() => null)) || base;
+    const fonts = { stamp: await fontFor(stamp.font), label: await fontFor(label.font), fallbacks: [base, fallbackNotes()] };
 
     // Fetch each source once (originals render best).
     const local: Record<string, { file: string; hasAudio: boolean; duration: number }> = {};
@@ -55,9 +63,9 @@ export async function renderMash(mashId: string) {
     await setMash(mashId, { progress: 8 });
 
     // Track timeline, for the song title shown during each track.
-    const titles: { from: number; to: number; title: string }[] = [];
+    const titles: { from: number; to: number; title: string; artist: string }[] = [];
     let tcur = 0;
-    for (const t of tracks) { const len = Math.max(1, (t.row!.duration || 0) - t.ref.start); titles.push({ from: tcur, to: tcur + len, title: t.row!.title }); tcur += len - st.crossfade; }
+    for (const t of tracks) { const len = Math.max(1, (t.row!.duration || 0) - t.ref.start); titles.push({ from: tcur, to: tcur + len, title: t.row!.title, artist: t.row!.artist }); tcur += len - st.crossfade; }
 
     const segs: Segment[] = [];
     let at = 0;
@@ -71,11 +79,11 @@ export async function renderMash(mashId: string) {
       const target = segmentLen({ len, start, end, duration: src.duration, photo }, effective, bpm);
       const win = photo ? { start: 0, len: target } : extendWindow(start, len, target, src.duration);
       const cur = musicOn && st.musicLabel !== false ? titles.find((x) => at >= x.from && at < x.to) || (st.whenEnds === "loop" ? titles[0] : null) : null;
-      segs.push({ kind: photo ? "photo" : "video", file: src.file, start: win.start, len: Math.max(0.2, Math.min(win.len, target)), orient: md.orient as Segment["orient"], hasAudio: src.hasAudio, motion: md.motion, date: e.date, note: e.note, musicTitle: cur ? cur.title : null });
+      segs.push({ kind: photo ? "photo" : "video", file: src.file, start: win.start, len: Math.max(0.2, Math.min(win.len, target)), orient: md.orient as Segment["orient"], hasAudio: src.hasAudio, motion: md.motion, date: e.date, note: e.note, musicTitle: cur ? cur.title : null, musicArtist: cur ? cur.artist : null });
       at += target;
     }
 
-    const opts = { W, H, shape: st.shape, fill: st.fill, stamp: { ...STAMP_DEFAULT, ...(st.stamp || {}) }, clipAudio: st.audio !== "music", font, crf: q.crf };
+    const opts = { W, H, shape: st.shape, fill: st.fill, stamp, label, clipAudio: st.audio !== "music", fonts, crf: q.crf };
     const files: string[] = [];
     for (let i = 0; i < segs.length; i++) {
       const f = join(dir, `seg${String(i).padStart(4, "0")}.mov`);

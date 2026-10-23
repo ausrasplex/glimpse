@@ -8,7 +8,7 @@ import { str, bool } from "../http";
 import { enqueue } from "../queue";
 import { signOutOthers, destroySession } from "../session";
 import { testImmich } from "../immich";
-import { STAMP_DEFAULT } from "../../shared/mash";
+import { cleanStamp, cleanLabel } from "../../shared/textstyle";
 import { deleteUserCompletely } from "./people";
 import type { Action } from "./types";
 
@@ -21,13 +21,8 @@ export const setPrefs: Action = async ({ db, user }, a) => {
   if (typeof a.milestones === "boolean") p.milestones = a.milestones;
   if (typeof a.onThisDay === "boolean") p.onThisDay = a.onThisDay;
   if (["blur", "crop", "bars"].includes(str(a.fill, 5))) p.fill = a.fill;
-  if (a.stamp && typeof a.stamp === "object") {
-    const s = a.stamp as Record<string, unknown>;
-    p.stamp = {
-      on: s.on !== false, show: ["date", "dateNote", "day"].includes(str(s.show, 9)) ? s.show : STAMP_DEFAULT.show, format: ["short", "long", "num"].includes(str(s.format, 5)) ? s.format : "short",
-      pos: ["tl", "tr", "bl", "br"].includes(str(s.pos, 2)) ? s.pos : "tr", style: ["pill", "plain", "bold"].includes(str(s.style, 5)) ? s.style : "pill", size: ["s", "m", "l"].includes(str(s.size, 1)) ? s.size : "m"
-    };
-  }
+  if (a.stamp && typeof a.stamp === "object") p.stamp = cleanStamp(a.stamp);
+  if (a.label && typeof a.label === "object") p.label = cleanLabel(a.label);
   await db.update(schema.users).set({ prefs: p }).where(eq(schema.users.id, user.id));
 };
 

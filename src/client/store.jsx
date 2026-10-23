@@ -2,6 +2,7 @@
 import React from "react";
 import { GRADS } from "./util.js";
 import * as S from "./sel.js";
+import { updatePending } from "./resumable.js";
 
 const { createContext, useContext, useState, useEffect, useRef, useCallback } = React;
 const Ctx = createContext(null);
@@ -153,6 +154,13 @@ export function AppProvider({ initial, children }) {
     const slow = setInterval(() => { if (dbRef.current && !document.hidden) refresh(); }, 60000);
     return () => { clearInterval(t); clearInterval(slow); };
   }, [refresh, toast]);
+
+  // Keep the capture draft with its saved upload, so a reloaded page can pick up where it left off.
+  useEffect(() => {
+    if (!draft || !draft.uploadId) return;
+    const t = setTimeout(() => updatePending(draft.uploadId, { draft: Object.assign({}, draft, { uploadPct: null, uploadWaiting: false }) }), 400);
+    return () => clearTimeout(t);
+  }, [draft]);
 
   const meUser = db ? S.me(db) : null;
   const accent = meUser ? S.prefs(db, meUser.id).accent : "#E8A33D";

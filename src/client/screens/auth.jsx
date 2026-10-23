@@ -237,7 +237,7 @@ export function Signup({ params }) {
         </div>
         <div className="stack gap6" style={{ marginTop: 24 }}>
           <h1 style={{ margin: 0, fontSize: 24, letterSpacing: "-0.01em" }}>Create your account</h1>
-          <span className="muted" style={{ fontSize: 13.5 }}>{inv.project ? "You'll land straight in the project once you're in." : "You'll start with your own Diary."}</span>
+          <span className="muted" style={{ fontSize: 13.5 }}>{inv.project ? "You'll land straight in the project once you're in." : "You'll make your first project once you're in."}</span>
         </div>
         {ssoOn ? (
           <div className="stack gap12" style={{ marginTop: 20 }}>
@@ -434,7 +434,7 @@ export function SetupWizard() {
             <div style={{ width: 60, height: 60, borderRadius: "50%", background: "rgba(125,179,159,0.16)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="check" size={28} stroke={2.6} color="var(--ok)" /></div>
             <H sub="Finishing locks setup for good. Here's what you've chosen:">{f.serverName} is ready</H>
             <div className="card flush list">
-              {[["Admin", f.name + " · " + f.email], ["Timezone", zoneLabel(f.tz)], ["Web address", appUrl], ["New users get", f.quota === 0 ? "Unlimited" : f.quota + " GB"], ["Email", f.emailOk ? "Working" : "Skipped. Set it up in Settings", !f.emailOk], ["Single sign-on", f.ssoOk ? "Connected" : "Skipped. Passwords only"], ["Rendering", "CPU"], ["Created for you", "Diary & Freestyle categories, a Diary project, 2 reminders"]].map((r) => (
+              {[["Admin", f.name + " · " + f.email], ["Timezone", zoneLabel(f.tz)], ["Web address", appUrl], ["New users get", f.quota === 0 ? "Unlimited" : f.quota + " GB"], ["Email", f.emailOk ? "Working" : "Skipped. Set it up in Settings", !f.emailOk], ["Single sign-on", f.ssoOk ? "Connected" : "Skipped. Passwords only"], ["Rendering", "CPU"], ["Created for you", "Diary & Freestyle categories, 2 reminders"]].map((r) => (
                 <div key={r[0]} className="hrow between gap12" style={{ padding: "11px 14px", fontSize: 13 }}><span className="muted">{r[0]}</span><span style={{ fontWeight: 600, textAlign: "right", color: r[2] ? "var(--accent)" : "var(--fg)" }}>{r[1]}</span></div>
               ))}
             </div>

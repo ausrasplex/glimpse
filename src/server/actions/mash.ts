@@ -4,13 +4,13 @@ import { id } from "../ids";
 import { fail, notifyAdmins, requireMember } from "../core";
 import { str, bool, num } from "../http";
 import { enqueue } from "../queue";
-import { STAMP_DEFAULT, QUALITIES, type MashSettings, type Quality } from "../../shared/mash";
+import { QUALITIES, type MashSettings, type Quality } from "../../shared/mash";
+import { cleanStamp, cleanLabel } from "../../shared/textstyle";
 import type { Action } from "./types";
 
 const pickOne = <T extends string>(v: unknown, allowed: readonly T[], d: T): T => (allowed.includes(v as T) ? (v as T) : d);
 
 function cleanSettings(raw: Record<string, unknown>, defaultQuality: Quality): MashSettings {
-  const st = (raw.stamp || {}) as Record<string, unknown>;
   const tracks = Array.isArray(raw.tracks) ? raw.tracks.slice(0, 8).map((t) => {
     const x = (t || {}) as Record<string, unknown>;
     return { trackId: str(x.trackId, 60), start: num(x.start, 0, 3600, 0), fadeIn: num(x.fadeIn, 0, 10, 0), fadeOut: num(x.fadeOut, 0, 10, 2) };
@@ -20,10 +20,8 @@ function cleanSettings(raw: Record<string, unknown>, defaultQuality: Quality): M
     fill: pickOne(raw.fill, ["blur", "crop", "bars"] as const, "blur"),
     clipMode: pickOne(raw.clipMode, ["trimmed", "cap"] as const, "trimmed"),
     cap: num(raw.cap, 0.5, 10, 1),
-    stamp: {
-      on: st.on !== false, show: pickOne(st.show, ["date", "dateNote", "day"] as const, STAMP_DEFAULT.show), format: pickOne(st.format, ["short", "long", "num"] as const, "short"),
-      pos: pickOne(st.pos, ["tl", "tr", "bl", "br"] as const, "tr"), style: pickOne(st.style, ["pill", "plain", "bold"] as const, "pill"), size: pickOne(st.size, ["s", "m", "l"] as const, "m")
-    },
+    stamp: cleanStamp(raw.stamp),
+    label: cleanLabel(raw.label),
     tracks, crossfade: num(raw.crossfade, 0, 8, 2), whenEnds: pickOne(raw.whenEnds, ["loop", "fade"] as const, "loop"),
     audio: pickOne(raw.audio, ["both", "music", "clips"] as const, "both"), level: num(raw.level, 0, 100, 40),
     sync: pickOne(raw.sync, ["off", "auto", "fixed"] as const, "off"), beats: Math.round(num(raw.beats, 1, 8, 1)),

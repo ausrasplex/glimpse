@@ -13,6 +13,10 @@ export type ServerSettings = {
   userInvites: boolean; perDay: number; defaultQuota: number; warnAt: number;
   concurrency: number; maxRes: "720" | "1080" | "4k"; playback: "720" | "1080"; mashQuality: "smaller" | "high" | "best";
   musicUploads: boolean; loudness: boolean; trackSize: number; formats: Record<string, boolean>;
+  /** Longer clips: off keeps the 10 second cap; max is seconds, 0 for no limit. */
+  clipLimit: { on: boolean; max: number };
+  /** Let people pick any Google Fonts family for text on mashes; the server downloads each one once. */
+  googleFonts: boolean;
   email: { host: string; port: string; user: string; passEnc: string | null; from: string; ok: boolean };
   backup: { schedule: "daily" | "weekly" | "off"; keep: number; last: number | null; size: number };
   lockAfter: number; loginBg: "drift" | "still";
@@ -25,6 +29,7 @@ export const DEFAULTS: ServerSettings = {
   userInvites: false, perDay: 5, defaultQuota: 5, warnAt: 90,
   concurrency: 1, maxRes: "1080", playback: "720", mashQuality: "high",
   musicUploads: true, loudness: true, trackSize: 50, formats: { MP3: true, M4A: true, WAV: true, FLAC: true },
+  clipLimit: { on: false, max: 60 }, googleFonts: true,
   email: { host: "", port: "587", user: "", passEnc: null, from: "", ok: false },
   backup: { schedule: "daily", keep: 7, last: null, size: 0 },
   lockAfter: 5, loginBg: "drift",
@@ -67,7 +72,7 @@ export function publicSettings(s: ServerSettings, admin: boolean) {
   const pub = {
     name: s.name, url: env.appUrl, version: env.version, tz: s.tz, setupDone: s.setupDone, loginBg: s.loginBg,
     lockAfter: s.lockAfter, userInvites: s.userInvites, perDay: s.perDay, defaultQuota: s.defaultQuota,
-    musicUploads: s.musicUploads, trackSize: s.trackSize, formats: s.formats, maxRes: s.maxRes, mashQuality: s.mashQuality,
+    musicUploads: s.musicUploads, trackSize: s.trackSize, formats: s.formats, maxRes: s.maxRes, mashQuality: s.mashQuality, clipLimit: s.clipLimit, googleFonts: s.googleFonts,
     email: { ok: s.email.ok },
     sso: { on: s.sso.on, label: s.sso.label, passwordLogin: !s.sso.on || s.sso.passwordLogin },
     immich: { on: s.immich.on }

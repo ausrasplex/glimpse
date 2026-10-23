@@ -79,21 +79,90 @@ const SR_ONLY = { position: "absolute", width: 1, height: 1, padding: 0, margin:
 const focusPanel = (e) => { e.preventDefault(); if (e.currentTarget && e.currentTarget.focus) e.currentTarget.focus(); };
 const closer = (onClose) => (o) => { if (!o && onClose) onClose(); };
 
+// Drag a sheet down to close it: from the handle or title bar any time, or from its content once that's
+// scrolled to the top (otherwise the swipe scrolls). Past a third of its height, or a quick flick, closes it;
+// otherwise it springs back. The scrim fades as it goes.
+function useSheetDrag(onClose) {
+  const panel = useRef(null), scrim = useRef(null), body = useRef(null);
+  const g = useRef(null);
+  const still = () => typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const paint = (dy, anim) => {
+    const p = panel.current, s = scrim.current;
+    if (!p) return;
+    const ease = anim && !still() ? "transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)" : "none";
+    p.style.transition = ease; p.style.transform = dy ? "translateY(" + dy + "px)" : "";
+    if (s) { s.style.transition = anim && !still() ? "opacity 0.22s" : "none"; s.style.opacity = String(Math.max(0.15, 1 - dy / Math.max(1, p.offsetHeight))); }
+  };
+  const begin = (y) => { g.current = { y0: y, dy: 0, h: panel.current ? panel.current.offsetHeight : 1, pts: [[Date.now(), y]] }; };
+  const move = (y) => {
+    const s = g.current; if (!s) return;
+    s.dy = Math.max(0, y - s.y0);
+    s.pts.push([Date.now(), y]); if (s.pts.length > 12) s.pts.shift();
+    paint(s.dy, false);
+  };
+  const end = () => {
+    const s = g.current; g.current = null; if (!s) return;
+    // Speed over the last 100ms up to release, so a drag that pauses before letting go isn't a flick.
+    const now = Date.now(), last = s.pts[s.pts.length - 1][1];
+    const recent = s.pts.filter((p) => p[0] >= now - 100);
+    const speed = recent.length ? (last - recent[0][1]) / Math.max(16, now - recent[0][0]) : 0; // px per ms, downwards
+    if (s.dy > s.h / 3 || (speed > 0.4 && s.dy > 24)) {
+      paint(s.h, true);
+      setTimeout(() => onClose && onClose(), still() ? 0 : 200);
+    } else paint(0, true);
+  };
+  // Handle and title bar: always drag.
+  const grip = {
+    onPointerDown: (e) => {
+      if (e.button !== 0 || (e.target.closest && e.target.closest("button, a, input, textarea, select"))) return;
+      e.currentTarget.setPointerCapture(e.pointerId); begin(e.clientY);
+    },
+    onPointerMove: (e) => { if (g.current) move(e.clientY); },
+    onPointerUp: end, onPointerCancel: end,
+    style: { touchAction: "none" }
+  };
+  // Content: a downward swipe drags only when it's already scrolled to the top.
+  useEffect(() => {
+    const el = body.current; if (!el) return;
+    let y0 = null, dragging = false;
+    const ts = (e) => { y0 = e.touches[0].clientY; dragging = false; };
+    const tm = (e) => {
+      if (y0 == null) return;
+      const y = e.touches[0].clientY;
+      if (!dragging) {
+        if (el.scrollTop > 0 || y - y0 < 6) { if (y < y0) y0 = null; return; }
+        dragging = true; begin(y);
+      }
+      e.preventDefault(); move(y);
+    };
+    const te = () => { if (dragging) end(); y0 = null; dragging = false; };
+    el.addEventListener("touchstart", ts, { passive: true });
+    el.addEventListener("touchmove", tm, { passive: false });
+    el.addEventListener("touchend", te); el.addEventListener("touchcancel", te);
+    return () => { el.removeEventListener("touchstart", ts); el.removeEventListener("touchmove", tm); el.removeEventListener("touchend", te); el.removeEventListener("touchcancel", te); };
+  }, []);
+  return { panel, scrim, body, grip };
+}
+
 export function Sheet({ open, onClose, title, right, children, tall, label }) {
   if (!open) return null;
+  return <SheetPanel onClose={onClose} title={title} right={right} tall={tall} label={label}>{children}</SheetPanel>;
+}
+function SheetPanel({ onClose, title, right, children, tall, label }) {
+  const d = useSheetDrag(onClose);
   return (
     <RD.Root open onOpenChange={closer(onClose)}>
       <div className="overlay">
-        <RD.Overlay className="scrim" />
-        <RD.Content className="sheet" style={tall ? { height: "88%" } : null} aria-describedby={undefined} onOpenAutoFocus={focusPanel}>
-          <div className="grab"><span /></div>
+        <RD.Overlay className="scrim" ref={d.scrim} />
+        <RD.Content ref={d.panel} className="sheet" style={tall ? { height: "88%" } : null} aria-describedby={undefined} onOpenAutoFocus={focusPanel}>
+          <div className="grab" {...d.grip}><span /></div>
           {title ? (
-            <div className="sheet-head">
+            <div className="sheet-head" {...d.grip}>
               <RD.Title asChild><span className="sheet-title">{title}</span></RD.Title>
               {right || null}
             </div>
-          ) : <div style={{ height: 12 }}>{label ? <RD.Title style={SR_ONLY}>{label}</RD.Title> : null}</div>}
-          <div className="sheet-body" style={tall ? { flex: 1 } : null}>{children}</div>
+          ) : <div style={{ height: 12, touchAction: "none" }} onPointerDown={d.grip.onPointerDown} onPointerMove={d.grip.onPointerMove} onPointerUp={d.grip.onPointerUp} onPointerCancel={d.grip.onPointerCancel}>{label ? <RD.Title style={SR_ONLY}>{label}</RD.Title> : null}</div>}
+          <div ref={d.body} className="sheet-body" style={tall ? { flex: 1 } : null}>{children}</div>
         </RD.Content>
       </div>
     </RD.Root>

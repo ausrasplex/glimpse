@@ -163,7 +163,8 @@ function DaySheet({ day, setDay, cur, byDay }) {
   if (!day) return null;
   const es = byDay[day] || [];
   const t = todayKey();
-  const missed = !es.length && cur.cat.daily && day < t;
+  const start = S.projectStart(db, cur.p.id);
+  const missed = !es.length && cur.cat.daily && day < t && !!start && day >= start;
   const add = () => { setDraft({ date: day, presetProjectId: cur.p.id, returnTo: "calendar" }); setDay(null); nav.go("capture"); };
   return (
     <Sheet open onClose={() => setDay(null)} title={fullDay(day).replace(/ (\d{4})$/, (m, y) => (+y === new Date().getFullYear() ? "" : " " + y))} right={

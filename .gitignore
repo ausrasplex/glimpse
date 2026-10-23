@@ -5,3 +5,4 @@ dist
 *.tsbuildinfo
 next-env.d.ts
 .env*
+.personal*

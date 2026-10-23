@@ -1,4 +1,4 @@
-import { todayKey, addDays, diffDays, uid } from "./util.js";
+import { todayKey, addDays, diffDays, uid, dayKey } from "./util.js";
 
 // Read helpers over the shared data. Nothing here mutates.
 export const user = (db, id) => db.users.find((u) => u.id === id);
@@ -64,6 +64,16 @@ export function myProjects(db, userId, opts) {
 }
 export const sortProjects = (list) => list.slice().sort((a, b) => (b.m.pinned - a.m.pinned) || (b.last - a.last));
 
+// Today's pinned reminder: the person has a daily project and hasn't filmed for one today. Null when there's nothing to remind.
+export function dailyPending(db, userId) {
+  const daily = myProjects(db, userId).filter((x) => x.cat.daily);
+  if (!daily.length) return null;
+  const t = todayKey();
+  const ids = new Set(daily.map((x) => x.p.id));
+  if (db.entries.some((e) => e.date === t && e.authorId === userId && ids.has(e.projectId))) return null;
+  return { best: daily.slice().sort((a, b) => b.streak - a.streak)[0] };
+}
+
 export function moodColor(db, ownerId, label) {
   if (!label) return null;
   const list = db.moods[ownerId] || [];
@@ -107,7 +117,7 @@ export function rangeFor(id, custom) {
   const key = (x) => x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0");
   if (id === "this") return { from: key(first), to: t };
   if (id === "last") { const a = new Date(d.getFullYear(), d.getMonth() - 1, 1); const b = new Date(d.getFullYear(), d.getMonth(), 0); return { from: key(a), to: key(b) }; }
-  if (id === "week") return { from: addDays(t, -7), to: t };
+  if (id === "week") return { from: addDays(t, -6), to: t };
   if (id === "year") return { from: addDays(t, -365), to: t };
   if (id === "all") return { from: "2000-01-01", to: t };
   return custom || { from: addDays(t, -30), to: t };
@@ -117,15 +127,24 @@ export function entriesInRange(db, pid, from, to, memberId) {
   return projectEntries(db, pid).filter((e) => e.date >= from && e.date <= to && (!memberId || e.authorId === memberId)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.createdAt - b.createdAt));
 }
 
+// The first day a project counts for missed days: the day it was created, or an earlier clip filed into it.
+export function projectStart(db, pid) {
+  const p = project(db, pid);
+  const created = p && p.createdAt ? dayKey(new Date(p.createdAt)) : null;
+  return projectEntries(db, pid).reduce((a, e) => (a && a < e.date ? a : e.date), created);
+}
+
+// Days with no clip, from the later of the range start and the project start, up to yesterday.
 export function missedDays(db, pid, from, to) {
   const days = new Set(projectEntries(db, pid).map((e) => e.date));
-  const first = projectEntries(db, pid).reduce((a, e) => (a && a < e.date ? a : e.date), null);
-  if (!first) return [];
-  let k = from < first ? first : from;
-  const end = to > todayKey() ? todayKey() : to;
+  const start = projectStart(db, pid);
+  if (!start) return [];
+  const t = todayKey();
+  let k = from < start ? start : from;
+  const end = to < t ? to : addDays(t, -1);
   const out = [];
   let guard = 0;
-  while (k <= end && guard++ < 800) { if (!days.has(k) && k !== todayKey()) out.push(k); k = addDays(k, 1); }
+  while (k <= end && guard++ < 4000) { if (!days.has(k)) out.push(k); k = addDays(k, 1); }
   return out;
 }
 

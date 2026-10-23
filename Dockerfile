@@ -28,13 +28,13 @@ ENV NODE_ENV=production \
     PUID=99 \
     PGID=100 \
     TZ=UTC
-RUN apk add --no-cache ffmpeg libheif-tools postgresql17-client su-exec tini tzdata fontconfig font-inter shadow \
- && fc-cache -f
+RUN apk add --no-cache ffmpeg libheif-tools postgresql17-client su-exec tini tzdata shadow
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/drizzle ./drizzle
+COPY --from=build /app/fonts ./fonts
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && mkdir -p /data /media
 VOLUME ["/data"]

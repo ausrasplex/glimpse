@@ -1,13 +1,40 @@
 // Music tracks: duration, loudness, tempo guess and a normalised AAC copy for mashes and previews.
 import { join } from "node:path";
 import { rm, stat } from "node:fs/promises";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db, schema } from "../server/db";
 import { downloadTo, putFile, keys } from "../server/storage";
 import { getSettings } from "../server/settings";
 import { ffmpeg, probe, run, runBuffer } from "./ff";
 import { tmpDir } from "./media";
 import { estimateBpm } from "../shared/bpm";
+import { peaksFrom } from "../shared/peaks";
+
+// Waveform of the whole track, from 8 kHz mono samples of the original (the loudness-matched copy flattens it).
+async function measurePeaks(file: string): Promise<number[] | null> {
+  try {
+    const buf = await runBuffer("ffmpeg", ["-hide_banner", "-loglevel", "error", "-i", file, "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"]);
+    const p = peaksFrom(new Int16Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 2)));
+    return p.length ? p : null;
+  } catch { return null; }
+}
+
+// Tracks added before waveforms existed get one, once, when the worker starts.
+export async function backfillPeaks() {
+  const list = await db.select().from(schema.tracks).where(and(eq(schema.tracks.status, "ready"), isNull(schema.tracks.peaks)));
+  for (const t of list) {
+    const key = t.key || t.playKey;
+    if (!key) continue;
+    const dir = await tmpDir("peaks-" + t.id);
+    try {
+      const f = join(dir, "audio" + ((key.match(/\.[a-z0-9]+$/i) || [".m4a"])[0]));
+      await downloadTo(key, f);
+      const peaks = await measurePeaks(f);
+      if (peaks) await db.update(schema.tracks).set({ peaks }).where(eq(schema.tracks.id, t.id));
+    } catch (e) { console.error("[peaks]", t.id, (e as Error).message); }
+    finally { await rm(dir, { recursive: true, force: true }); }
+  }
+}
 
 export async function processTrack(trackId: string) {
   const t = await db.query.tracks.findFirst({ where: eq(schema.tracks.id, trackId) });
@@ -38,9 +65,10 @@ export async function processTrack(trackId: string) {
     const playKey = keys.trackPlay(trackId);
     await putFile(playKey, play, "audio/mp4");
     const extra = (await stat(play)).size;
+    const peaks = await measurePeaks(src);
     await db.update(schema.tracks).set({
       status: "ready", duration: Math.round(p.duration * 10) / 10, lufs: s.loudness ? -14 : lufs, playKey,
-      detectedBpm: bpm, bpm: t.bpm || bpm, size: t.size + extra
+      detectedBpm: bpm, bpm: t.bpm || bpm, size: t.size + extra, peaks
     }).where(eq(schema.tracks.id, trackId));
   } catch (e) {
     console.error("[track]", trackId, (e as Error).message);

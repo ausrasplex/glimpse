@@ -2,8 +2,10 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ffmpeg } from "./ff";
-import type { Stamp, Shape } from "../shared/mash";
+import type { Shape } from "../shared/mash";
 import { stampLines } from "../shared/mash";
+import { labelText, type Stamp, type Label } from "../shared/textstyle";
+import { renderOverlay, type OverlayItem } from "./overlay";
 
 export const FPS = 30;
 
@@ -17,11 +19,11 @@ export type Segment = {
   motion?: string | null;
   date: string; note: string;
   musicTitle?: string | null;
+  musicArtist?: string | null;
 };
 
-export type RenderOpts = { W: number; H: number; shape: Shape; fill: "blur" | "crop" | "bars"; stamp: Stamp; clipAudio: boolean; font: string | null; crf: number };
-
-const esc = (p: string) => p.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'");
+/** fonts: the font file for the stamp and the song title, and the fallbacks (Inter first) for characters a font lacks. */
+export type RenderOpts = { W: number; H: number; shape: Shape; fill: "blur" | "crop" | "bars"; stamp: Stamp; label: Label; clipAudio: boolean; fonts: { stamp: string; label: string; fallbacks: string[] }; crf: number };
 
 // Filters that turn the input [in] into a W×H frame [fit] according to the fill rule.
 export function fitFilter(o: RenderOpts, orient: Segment["orient"], src = "in"): string {
@@ -33,53 +35,24 @@ export function fitFilter(o: RenderOpts, orient: Segment["orient"], src = "in"):
   return `[${src}]split=2[bga][fga];[bga]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},boxblur=${blur}:3,eq=brightness=-0.06[bg];[fga]scale=${W}:${H}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[fit]`;
 }
 
-// drawtext filters for the date stamp and song title. Text goes through files to avoid escaping.
-export async function textFilters(o: RenderOpts, seg: Segment, i: number, dir: string): Promise<string[]> {
-  const out: string[] = [];
-  if (!o.font) return out;
-  const short = Math.min(o.W, o.H);
-  const pad = Math.round(short * 0.05);
-  const font = `fontfile='${esc(o.font)}'`;
-  const st = o.stamp;
-  if (st.on) {
-    const [l1, l2] = stampLines(st, seg.date, seg.note, i);
-    const fs = Math.round(short * ({ s: 0.034, m: 0.042, l: 0.054 }[st.size] || 0.042) * (st.style === "bold" ? 1.25 : 1));
-    const fs2 = Math.round(fs * 0.82);
-    const t1 = join(dir, `s${i}a.txt`), t2 = join(dir, `s${i}b.txt`);
-    await writeFile(t1, st.style === "bold" ? l1.toUpperCase() : l1);
-    if (l2) await writeFile(t2, (st.style === "bold" ? l2.toUpperCase() : l2).slice(0, 40));
-    const left = st.pos[1] === "l", top = st.pos[0] === "t";
-    const box = st.style === "pill" ? `:box=1:boxcolor=black@0.45:boxborderw=${Math.round(fs * 0.35)}` : `:shadowcolor=black@0.7:shadowx=${Math.max(1, Math.round(fs / 14))}:shadowy=${Math.max(1, Math.round(fs / 14))}`;
-    const x = left ? `${pad}` : `w-tw-${pad}`;
-    const gap = Math.round(fs * (st.style === "pill" ? 0.9 : 0.35));
-    const lineH = fs + gap;
-    if (top) {
-      out.push(`drawtext=${font}:textfile='${esc(t1)}':fontsize=${fs}:fontcolor=white${box}:x=${x}:y=${pad}`);
-      if (l2) out.push(`drawtext=${font}:textfile='${esc(t2)}':fontsize=${fs2}:fontcolor=white@0.92${box}:x=${x}:y=${pad + lineH}`);
-    } else {
-      const y2 = `h-th-${pad}`;
-      if (l2) {
-        out.push(`drawtext=${font}:textfile='${esc(t2)}':fontsize=${fs2}:fontcolor=white@0.92${box}:x=${x}:y=${y2}`);
-        out.push(`drawtext=${font}:textfile='${esc(t1)}':fontsize=${fs}:fontcolor=white${box}:x=${x}:y=h-${pad + fs2 + gap + fs}`);
-      } else out.push(`drawtext=${font}:textfile='${esc(t1)}':fontsize=${fs}:fontcolor=white${box}:x=${x}:y=${y2}`);
-    }
-  }
-  if (seg.musicTitle) {
-    const fs = Math.round(short * 0.032);
-    const tf = join(dir, `m${i}.txt`);
-    await writeFile(tf, seg.musicTitle.slice(0, 40));
-    const atTop = st.on && st.pos === "bl";
-    out.push(`drawtext=${font}:textfile='${esc(tf)}':fontsize=${fs}:fontcolor=white:box=1:boxcolor=black@0.45:boxborderw=${Math.round(fs * 0.35)}:x=${pad}:y=${atTop ? pad : `h-th-${pad}`}`);
-  }
-  return out;
+
+// The date stamp and song title for one segment, drawn into a transparent PNG. Null when there's no text.
+export async function textOverlay(o: RenderOpts, seg: Segment, i: number, dir: string): Promise<string | null> {
+  const items: OverlayItem[] = [];
+  if (o.stamp.on) { const [l1, l2] = stampLines(o.stamp, seg.date, seg.note, i); items.push({ look: o.stamp, lines: [l1, (l2 || "").slice(0, 60)], fontFile: o.fonts.stamp }); }
+  if (seg.musicTitle) items.push({ look: o.label, lines: [labelText(o.label, seg.musicTitle, seg.musicArtist).slice(0, 60)], fontFile: o.fonts.label });
+  const out = join(dir, `text${i}.png`);
+  return (await renderOverlay(items, o.W, o.H, o.fonts.fallbacks, out)) ? out : null;
 }
 
 // Encode one clip or photo into a uniform segment (H.264, W×H, 30 fps, AAC 48k stereo).
 export async function renderSegment(o: RenderOpts, seg: Segment, i: number, dir: string, out: string) {
-  const text = await textFilters(o, seg, i, dir);
+  const overlay = await textOverlay(o, seg, i, dir);
   const frames = Math.max(1, Math.round(seg.len * FPS));
   const dur = (frames / FPS).toFixed(3);
-  const tail = (label: string) => (text.length ? `[${label}]${text.join(",")},format=yuv420p[v]` : `[${label}]format=yuv420p[v]`);
+  // The text PNG goes in as the last input; ov is its input number.
+  let ov = 2;
+  const tail = (label: string) => (overlay ? `[${label}][${ov}:v]overlay=0:0:format=auto,format=yuv420p[v]` : `[${label}]format=yuv420p[v]`);
   let args: string[];
   if (seg.kind === "photo") {
     const z = seg.motion === "out" ? `1.12-0.12*on/${frames}` : seg.motion === "pan" ? "1.14" : seg.motion === "still" ? "1" : `1+0.12*on/${frames}`;
@@ -89,12 +62,14 @@ export async function renderSegment(o: RenderOpts, seg: Segment, i: number, dir:
       `[fit]scale=${o.W * 2}:${o.H * 2},zoompan=z='${z}':x='${x}':y='ih/2-(ih/zoom/2)':d=${frames}:s=${o.W}x${o.H}:fps=${FPS}[zp]`,
       tail("zp")
     ].join(";");
-    args = ["-i", seg.file, "-f", "lavfi", "-t", dur, "-i", "anullsrc=r=48000:cl=stereo", "-filter_complex", fc, "-map", "[v]", "-map", "1:a"];
+    args = ["-i", seg.file, "-f", "lavfi", "-t", dur, "-i", "anullsrc=r=48000:cl=stereo", ...(overlay ? ["-i", overlay] : []), "-filter_complex", fc, "-map", "[v]", "-map", "1:a"];
   } else {
-    const fc = [`[0:v]fps=${FPS}[in]`, fitFilter(o, seg.orient, "in"), tail("fit")].join(";");
     const useAudio = o.clipAudio && seg.hasAudio;
+    if (useAudio) ov = 1;
+    const fc = [`[0:v]fps=${FPS}[in]`, fitFilter(o, seg.orient, "in"), tail("fit")].join(";");
     args = ["-ss", seg.start.toFixed(3), "-t", dur, "-i", seg.file];
     if (!useAudio) args.push("-f", "lavfi", "-t", dur, "-i", "anullsrc=r=48000:cl=stereo");
+    if (overlay) args.push("-i", overlay);
     args.push("-filter_complex", fc + (useAudio ? ";[0:a]aresample=48000,aformat=channel_layouts=stereo,apad[a]" : ""), "-map", "[v]", "-map", useAudio ? "[a]" : "1:a");
   }
   // Audio stays uncompressed (PCM in a .mov) until the final mix, so it's only AAC-encoded once, at the preset's bitrate.

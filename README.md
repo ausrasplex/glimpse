@@ -31,7 +31,7 @@ Glimpse needs two companion containers. Install them from **Apps** (Community Ap
 
 | Container | Suggested app | Notes |
 |---|---|---|
-| PostgreSQL 16 or 17 | `postgresql17` (or the official `postgres`) | Create a database `glimpse` and a user with a strong password |
+| PostgreSQL 15 or newer | `postgresql17` (or the official `postgres`) | Create a database `glimpse` and a user with a strong password |
 | Redis 7+ | `redis` | Default settings are fine |
 
 Then create a share for your media in **Shares › Add Share**, e.g. `glimpse-media`:
@@ -101,7 +101,7 @@ Most Unraid setups should keep **File storage** on `local`. Use S3 if your stora
 - **Database:** Glimpse runs `pg_dump` on the schedule set in **Settings › Backups** into `/mnt/user/appdata/glimpse/backups`.
 - **Media:** clips, photos, music and mashes live in your media share (`/mnt/user/glimpse-media`), as normal files you can back up with anything. With S3 storage, back up the S3 container's data folder instead.
 
-Restore: create an empty database and run `pg_restore --no-owner -d "$DATABASE_URL" glimpse-YYYY-MM-DD-HH-MM.dump`.
+Restore: create an empty database and run `pg_restore --no-owner -d "$DATABASE_URL" glimpse-YYYY-MM-DD-HH-MM.dump`. Backups are written by `pg_dump` 17, which older `pg_restore` versions can't read, so run the restore from inside the Glimpse container (it has version 17), even if your database is older: `docker exec glimpse sh -c 'pg_restore --no-owner -d "$DATABASE_URL" /data/backups/glimpse-YYYY-MM-DD-HH-MM.dump'`.
 
 ## Environment variables
 

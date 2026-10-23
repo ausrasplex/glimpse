@@ -11,10 +11,23 @@ import { getSettings } from "../server/settings";
 import { decrypt } from "../server/crypto";
 import { env } from "../server/env";
 import { ffmpeg, probe, orientOf, run } from "./ff";
+import { takenDayFrom } from "../shared/dates";
 
 export const STRIP_FRAMES = 20;
 export const tmpDir = async (name: string) => { const d = join(env.dataDir, "tmp", name); await mkdir(d, { recursive: true }); return d; };
 const size = async (f: string) => (await stat(f)).size;
+
+// When and on which day a photo was taken, from its EXIF. Read from the original: converted copies drop it.
+async function photoTaken(file: string, tz: string) {
+  try {
+    const exifr = (await import("exifr")).default;
+    const x = await exifr.parse(file, { pick: ["DateTimeOriginal", "OffsetTimeOriginal", "CreateDate", "OffsetTime"], reviveValues: false }) as Record<string, string> | undefined;
+    if (!x) return null;
+    const when = x.DateTimeOriginal || x.CreateDate;
+    return when ? takenDayFrom(when + (x.OffsetTimeOriginal || x.OffsetTime || ""), tz) : null;
+  } catch { return null; }
+}
+const ownerTz = async (userId: string) => (await db.query.users.findFirst({ where: eq(schema.users.id, userId) }))?.tz || "UTC";
 
 async function setMedia(id: string, o: Partial<typeof schema.media.$inferInsert>) {
   await db.update(schema.media).set(o).where(eq(schema.media.id, id));
@@ -49,11 +62,13 @@ export async function processMedia(mediaId: string) {
       // Display copy: up to 1920 on the long side, rotation applied.
       await ffmpeg(["-i", img, "-frames:v", "1", "-vf", "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1920,ih))'", "-q:v", "3", poster]);
       const pp = await probe(poster);
+      const taken = m.takenDay ? null : await photoTaken(orig, await ownerTz(m.ownerId));
       const posterKey = keys.mediaPoster(m.ownerId, m.id);
       await putFile(posterKey, poster, "image/jpeg");
       await setMedia(mediaId, {
         status: "READY", progress: 100, posterKey, derivedSize: await size(poster), width: pp.width || p.width, height: pp.height || p.height,
-        orient: orientOf(pp.width || p.width, pp.height || p.height), duration: 10, codec: ext.replace(".", "").toUpperCase(), converted: /heic|heif/i.test(ext)
+        orient: orientOf(pp.width || p.width, pp.height || p.height), duration: 10, codec: ext.replace(".", "").toUpperCase(), converted: /heic|heif/i.test(ext),
+        ...(taken ? { takenDay: taken.day, takenAt: m.takenAt ?? taken.at } : {})
       });
       return;
     }
@@ -81,13 +96,13 @@ export async function processMedia(mediaId: string) {
     await putFile(pk, playback, "video/mp4");
     await putFile(ok, poster, "image/jpeg");
     await putFile(sk, strip, "image/jpeg");
-    let takenAt: Date | null = null;
-    if (p.creation) { const d = new Date(p.creation); if (!isNaN(d.getTime()) && d.getFullYear() > 2000) takenAt = d; }
+    const taken = m.takenDay ? null : takenDayFrom(p.creation, await ownerTz(m.ownerId));
     await setMedia(mediaId, {
       status: "READY", progress: 100, playbackKey: pk, posterKey: ok, stripKey: sk,
       derivedSize: (await size(playback)) + (await size(poster)) + (await size(strip)),
       width: p.width, height: p.height, orient: orientOf(p.width, p.height), duration: Math.round(p.duration * 10) / 10,
-      codec: p.vcodec?.toUpperCase() ?? null, converted: p.vcodec !== "h264", takenAt: m.takenAt ?? takenAt
+      codec: p.vcodec?.toUpperCase() ?? null, converted: p.vcodec !== "h264",
+      ...(taken ? { takenDay: taken.day, takenAt: m.takenAt ?? taken.at } : {})
     });
   } catch (e) {
     console.error("[media]", mediaId, (e as Error).message);
@@ -126,8 +141,10 @@ export async function importImmich(mediaId: string, userId: string, assetId: str
     const bytes = await size(tmp);
     await putFile(key, tmp, info.originalMimeType || "application/octet-stream");
     await rm(dir, { recursive: true, force: true });
+    // Immich's localDateTime is the wall-clock time where it was taken (labelled UTC), so its date is the filmed day.
     const taken = info.fileCreatedAt ? new Date(info.fileCreatedAt) : null;
-    await setMedia(mediaId, { originalKey: key, size: bytes, fileName: name, mime: info.originalMimeType || null, kind: info.type === "IMAGE" ? "photo" : "video", takenAt: taken && !isNaN(taken.getTime()) ? taken : null, status: "PROCESSING", progress: 15 });
+    const local = info.localDateTime ? takenDayFrom(info.localDateTime.replace(/Z$/i, ""), "UTC") : null;
+    await setMedia(mediaId, { originalKey: key, size: bytes, fileName: name, mime: info.originalMimeType || null, kind: info.type === "IMAGE" ? "photo" : "video", takenAt: taken && !isNaN(taken.getTime()) ? taken : null, takenDay: local ? local.day : null, status: "PROCESSING", progress: 15 });
     await processMedia(mediaId);
   } catch (e) {
     console.error("[immich]", mediaId, (e as Error).message);

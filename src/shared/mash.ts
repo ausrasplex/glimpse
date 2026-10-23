@@ -8,14 +8,17 @@ export const OUTPUT: Record<string, Record<Shape, [number, number]>> = {
   "4k": { portrait: [2160, 3840], landscape: [3840, 2160], square: [2160, 2160] }
 };
 
-export type Stamp = { on: boolean; show: "date" | "dateNote" | "day"; format: "short" | "long" | "num"; pos: "tl" | "tr" | "bl" | "br"; style: "pill" | "plain" | "bold"; size: "s" | "m" | "l" };
-export const STAMP_DEFAULT: Stamp = { on: true, show: "date", format: "short", pos: "tr", style: "pill", size: "m" };
+import type { Stamp, Label } from "./textstyle";
+export type { Stamp, Label } from "./textstyle";
+export { STAMP_DEFAULT, LABEL_DEFAULT } from "./textstyle";
 
 export type TrackRef = { trackId: string; start: number; fadeIn: number; fadeOut: number };
 export type MashSettings = {
   shape: Shape; fill: "blur" | "crop" | "bars"; clipMode: "trimmed" | "cap"; cap: number; stamp: Stamp;
   tracks: TrackRef[]; crossfade: number; whenEnds: "loop" | "fade"; audio: "both" | "music" | "clips"; level: number;
   sync: "off" | "auto" | "fixed"; beats: number; stretch: boolean; musicLabel: boolean;
+  /** How the song title looks. Missing on older mashes: the default look. */
+  label?: Label;
   /** Output quality preset. Missing on mashes made before presets existed: treated as "high". */
   quality?: Quality;
 };

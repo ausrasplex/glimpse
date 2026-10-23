@@ -182,6 +182,12 @@ export const setServer: Action = async ({ user }, a) => {
       const next = { MP3: f.MP3 === true, M4A: f.M4A === true, WAV: f.WAV === true, FLAC: f.FLAC === true };
       if (Object.values(next).some(Boolean)) s.formats = next;
     }
+    if (a.clipLimit && typeof a.clipLimit === "object") {
+      const c = a.clipLimit as Record<string, unknown>;
+      if (typeof c.on === "boolean") s.clipLimit.on = c.on;
+      if (typeof c.max === "number" && isFinite(c.max)) s.clipLimit.max = c.max <= 0 ? 0 : Math.round(num(c.max, 11, 36000, 60));
+    }
+    if (typeof a.googleFonts === "boolean") s.googleFonts = a.googleFonts;
     if (a.loginBg === "drift" || a.loginBg === "still") s.loginBg = a.loginBg;
     if (typeof a.lockAfter === "number") s.lockAfter = Math.round(num(a.lockAfter, 3, 10, 5));
     if (a.backup && typeof a.backup === "object") {

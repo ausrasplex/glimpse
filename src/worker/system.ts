@@ -76,6 +76,8 @@ export async function cleanup() {
   await db.delete(schema.notifications).where(and(eq(schema.notifications.read, true), lt(schema.notifications.createdAt, new Date(Date.now() - 120 * 86400e3))));
   // Temp files left by a crash.
   try { for (const f of await readdir(join(env.dataDir, "tmp"))) { const p = join(env.dataDir, "tmp", f); if (Date.now() - (await stat(p)).mtimeMs > 6 * 3600e3) await run("rm", ["-rf", p]); } } catch { /* none */ }
+  // Resumable uploads nobody came back to finish (their media is marked failed above, then removed as an orphan).
+  try { for (const f of await readdir(join(env.dataDir, "uploads"))) { const p = join(env.dataDir, "uploads", f); if (Date.now() - (await stat(p)).mtimeMs > 24 * 3600e3) await unlink(p); } } catch { /* none */ }
   void isNull;
 }
 
