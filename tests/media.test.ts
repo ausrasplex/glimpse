@@ -14,6 +14,7 @@ test("files are sorted by type, then by extension when the type is missing", () 
   assert.deepEqual(kindOfFile("IMG_1.MOV", ""), { kind: "video", type: "video/quicktime" });
   assert.deepEqual(kindOfFile("IMG_2.HEIC", "application/octet-stream"), { kind: "photo", type: "image/heic" });
   assert.deepEqual(kindOfFile("p.jpg", "image/jpeg"), { kind: "photo", type: "image/jpeg" });
+  assert.deepEqual(kindOfFile("clip.mp4", "application/mp4"), { kind: "video", type: "video/mp4" });
   assert.equal(kindOfFile("doc.pdf", "application/pdf"), null);
   assert.equal(kindOfFile("doc.pdf", ""), null);
   assert.equal(kindOfFile("logo.svg", "image/svg+xml"), null);
@@ -22,6 +23,8 @@ test("files are sorted by type, then by extension when the type is missing", () 
 test("the picker accepts media types and the extensions phones mislabel", () => {
   for (const e of [".mov", ".mts", ".heic", ".webp"]) assert.ok(ACCEPT.split(",").includes(e));
   assert.ok(ACCEPT.startsWith("video/*,image/*"));
+  // A non image/video type keeps Android on the file manager rather than the photo picker.
+  assert.ok(ACCEPT.split(",").some((t) => t.includes("/") && !/^(image|video)\//.test(t)));
 });
 test("first bytes reveal what a file really is", () => {
   assert.equal(sniffKind(bytes([0, 0, 0, 0x20], "ftypisom")), "video");

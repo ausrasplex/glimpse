@@ -9,8 +9,12 @@ export const PHOTO_TYPES: Record<string, string> = {
 };
 const PHOTO_MIMES = new Set(Object.values(PHOTO_TYPES));
 
-/** The picker's accept list: media types, plus extensions phones often label wrongly. */
-export const ACCEPT = ["video/*", "image/*"].concat(Object.keys(VIDEO_TYPES).concat(Object.keys(PHOTO_TYPES)).map((e) => "." + e)).join(",");
+/**
+ * The picker's accept list: media types, plus extensions phones often label wrongly.
+ * application/mp4 (still a video container) is there because Android Chrome opens its gallery-style photo picker
+ * when every accepted type is image/* or video/*; one other type makes it open the file manager instead.
+ */
+export const ACCEPT = ["video/*", "image/*", "application/mp4"].concat(Object.keys(VIDEO_TYPES).concat(Object.keys(PHOTO_TYPES)).map((e) => "." + e)).join(",");
 
 const extOf = (name: string) => { const m = /\.([a-z0-9]{1,5})$/i.exec(name || ""); return m ? m[1].toLowerCase() : ""; };
 
@@ -19,6 +23,7 @@ export function kindOfFile(name: string, type: string): { kind: "video" | "photo
   const t = (type || "").toLowerCase();
   const ext = extOf(name);
   if (t.startsWith("video/")) return { kind: "video", type: t };
+  if (t === "application/mp4") return { kind: "video", type: "video/mp4" };
   if (PHOTO_MIMES.has(t)) return { kind: "photo", type: t };
   if (!t || t === "application/octet-stream") {
     if (VIDEO_TYPES[ext]) return { kind: "video", type: VIDEO_TYPES[ext] };
