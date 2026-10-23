@@ -21,7 +21,7 @@
   <DonateText/>
   <DonateLink/>
   <Requires>PostgreSQL (16 or 17) and Redis (7 or newer), each as its own container, and a share for media (e.g. glimpse-media) mapped to /media. A reverse proxy (SWAG, Nginx Proxy Manager, Caddy or Traefik) with HTTPS if Glimpse is reachable from the internet.</Requires>
-  <Config Name="WebUI port" Target="3000" Default="3000" Mode="tcp" Description="Port the web app listens on. Point your reverse proxy here." Type="Port" Display="always" Required="true" Mask="false">3000</Config>
+  <Config Name="WebUI port" Target="3000" Default="4444" Mode="tcp" Description="Host port the web app is exposed on. Point your reverse proxy here." Type="Port" Display="always" Required="true" Mask="false">4444</Config>
   <Config Name="App data" Target="/data" Default="/mnt/user/appdata/glimpse" Mode="rw" Description="Database backups and temporary render files. Include this folder in your backups." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/glimpse</Config>
   <Config Name="Media" Target="/media" Default="/mnt/user/glimpse-media" Mode="rw" Description="Where clips, photos, music and mashes are saved (when File storage is local). Use a /mnt/user/... share path, not /mnt/cache/..., so files stay visible after the mover runs. Cache pool as primary storage with the array as secondary works well." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/glimpse-media</Config>
   <Config Name="File storage" Target="STORAGE" Default="local|s3" Mode="" Description="local saves files in the Media folder above (recommended). s3 uses an S3-compatible store instead: fill in the S3 settings under 'Show more settings'." Type="Variable" Display="always" Required="true" Mask="false">local</Config>
