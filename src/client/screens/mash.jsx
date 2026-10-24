@@ -42,6 +42,24 @@ function TextCard({ d, set, sample, db, me }) {
   const putLabel = (o) => set({ label: Object.assign({}, lb, o) });
   const look = lb.match ? matched(lb, st) : lb;
   const box = d.shape === "landscape" ? { w: 320, h: 180 } : d.shape === "square" ? { w: 240, h: 240 } : { w: 198, h: 352 };
+  // Once the preview sticks below the header it shrinks to two thirds. The scroll position is adjusted by the
+  // height it gives up, so the controls under your finger don't jump; it grows back a little further up.
+  const [stuck, setStuck] = useState(false);
+  const mark = useRef(null);
+  useEffect(() => {
+    const el = mark.current, sc = el && el.closest(".scroll");
+    if (!sc) return;
+    const give = box.h - Math.round(box.h * 2 / 3);
+    let on = false;
+    const check = () => {
+      const top = el.getBoundingClientRect().top - sc.getBoundingClientRect().top;
+      if (!on && top < 0) { on = true; setStuck(true); sc.scrollTop -= give; }
+      else if (on && top > give + 4) { on = false; setStuck(false); sc.scrollTop += give; }
+    };
+    sc.addEventListener("scroll", check, { passive: true });
+    return () => sc.removeEventListener("scroll", check);
+  }, [box.h]);
+  const pv = stuck ? { w: Math.round(box.w * 2 / 3), h: Math.round(box.h * 2 / 3) } : box;
   const md = sample ? S.media(db, sample.mediaId) : null;
   const pf = S.prefs(db, me.id);
   const isDefault = JSON.stringify(cleanStamp(pf.stamp)) === JSON.stringify(st) && JSON.stringify(cleanLabel(pf.label)) === JSON.stringify(lb);
@@ -53,8 +71,10 @@ function TextCard({ d, set, sample, db, me }) {
   return (
     <div className="card stack gap16">
       <div className="stack gap4"><span style={{ fontSize: 15, fontWeight: 700 }}>Text on the video</span><span className="small muted">The preview is to scale, in the fonts you pick.</span></div>
-      <div style={{ display: "flex", justifyContent: "center" }}>
-        <TextPreview items={items} w={box.w} h={box.h} bg={md ? (md.thumb ? "url(" + md.thumb + ") center/cover, " + md.grad : md.grad) : "linear-gradient(160deg,#C98A4B,#584E75)"} />
+      <div ref={mark} aria-hidden="true" style={{ height: 0, marginBottom: -16 }} />
+      {/* Stays in view just below the header while the controls scroll, but never leaves this card. */}
+      <div style={{ position: "sticky", top: 0, zIndex: 2, display: "flex", justifyContent: "center", margin: "0 -16px", padding: "10px 16px 12px", background: "var(--surface)", borderBottom: "1px solid var(--line-soft)" }}>
+        <TextPreview items={items} w={pv.w} h={pv.h} bg={md ? (md.thumb ? "url(" + md.thumb + ") center/cover, " + md.grad : md.grad) : "linear-gradient(160deg,#C98A4B,#584E75)"} />
       </div>
       <Opts value={tab} onChange={setTab} options={[{ id: "stamp", label: "Date stamp" }, { id: "label", label: "Song title" }]} />
       {tab === "stamp" ? (
