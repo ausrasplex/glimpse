@@ -86,6 +86,13 @@ export async function concatSegments(files: string[], dir: string, out: string) 
 
 export type BedTrack = { file: string; start: number; fadeIn: number; fadeOut: number; duration: number };
 
+/** The fade-out of the track playing `at` seconds into the tracklist (tracks overlap by `crossfade`). */
+export function endingFade(tracks: { start: number; duration: number; fadeOut: number }[], crossfade: number, at: number): number {
+  let from = 0, pick = tracks[0];
+  for (const t of tracks) { if (at >= from) pick = t; from += Math.max(1, t.duration - t.start) - crossfade; }
+  return pick ? Math.max(0, pick.fadeOut) : 0;
+}
+
 // The tracklist as one audio file: each track from its start point, crossfaded, looped or faded to fit.
 export async function buildBed(tracks: BedTrack[], total: number, crossfade: number, whenEnds: "loop" | "fade", dir: string): Promise<string> {
   // Uncompressed WAV between steps; the final mix does the one AAC encode.
@@ -107,9 +114,13 @@ export async function buildBed(tracks: BedTrack[], total: number, crossfade: num
   await ffmpeg([...inputs, "-filter_complex", parts.join(";"), "-map", `[${last}]`, "-c:a", "pcm_s16le", one]);
   const bedLen = tracks.reduce((a, t) => a + Math.max(1, t.duration - t.start), 0) - Math.max(0, tracks.length - 1) * crossfade;
   const out = join(dir, "bed.wav");
-  const fadeAt = Math.max(0, total - 2).toFixed(2);
-  if (bedLen < total && whenEnds === "loop") await ffmpeg(["-stream_loop", "-1", "-i", one, "-t", total.toFixed(3), "-af", `afade=t=out:st=${fadeAt}:d=2`, "-c:a", "pcm_s16le", out]);
-  else await ffmpeg(["-i", one, "-t", total.toFixed(3), "-af", `apad,atrim=0:${total.toFixed(3)},afade=t=out:st=${fadeAt}:d=2`, "-c:a", "pcm_s16le", out]);
+  // The mash ends with the fade-out chosen for whichever track is playing then ("None" is a clean cut).
+  // If the music already ran out (and doesn't loop), that track's own fade has happened, so nothing more.
+  const loop = bedLen < total && whenEnds === "loop";
+  const endFade = !loop && bedLen < total ? 0 : endingFade(tracks, crossfade, loop ? total % bedLen : total);
+  const fade = endFade > 0 ? `,afade=t=out:st=${Math.max(0, total - endFade).toFixed(2)}:d=${endFade}` : "";
+  if (loop) await ffmpeg(["-stream_loop", "-1", "-i", one, "-t", total.toFixed(3), "-af", `atrim=0:${total.toFixed(3)}${fade}`, "-c:a", "pcm_s16le", out]);
+  else await ffmpeg(["-i", one, "-t", total.toFixed(3), "-af", `apad,atrim=0:${total.toFixed(3)}${fade}`, "-c:a", "pcm_s16le", out]);
   return out;
 }
 

@@ -8,19 +8,44 @@ import { barsFrom } from "../../shared/peaks";
 
 const { useState, useEffect, useRef } = React;
 
+// Volume goes through Web Audio, because iPhones ignore an audio element's own volume. One context for the app.
+let actx = null;
+function gainFor(a) {
+  try {
+    const C = window.AudioContext || window.webkitAudioContext;
+    if (!C) return null;
+    actx = actx || new C();
+    if (actx.state === "suspended") actx.resume().catch(() => {});
+    const g = actx.createGain();
+    actx.createMediaElementSource(a).connect(g).connect(actx.destination);
+    return g;
+  } catch (e) { return null; }
+}
+
 // Plays a track preview. Position comes from the audio itself, so the waveform's progress line stays true,
-// and seek() jumps anywhere (starting playback there if it wasn't playing). A seek can also say where to stop.
+// and seek() jumps anywhere (starting playback there if it wasn't playing). A seek can also say where to stop,
+// and fade in from `from` and out before the stop, as the mash will.
 export function usePreview() {
   const [playing, setPlaying] = useState(null);
   const [pos, setPos] = useState(0);
   const audio = useRef(null);
+  const gain = useRef(null);
   const until = useRef(null);
+  const env = useRef(null);
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
     const tick = () => {
       const a = audio.current;
-      if (a) { setPos(a.currentTime || 0); if (until.current != null && a.currentTime >= until.current) { a.pause(); audio.current = null; setPlaying(null); return; } }
+      if (a) {
+        const t = a.currentTime || 0, e = env.current;
+        let v = 1;
+        if (e && e.fadeIn > 0) v *= Math.max(0, Math.min(1, (t - e.from) / e.fadeIn));
+        if (e && e.fadeOut > 0 && until.current != null) v *= Math.max(0, Math.min(1, (until.current - t) / e.fadeOut));
+        if (gain.current) gain.current.gain.value = v; else a.volume = v;
+        setPos(t);
+        if (until.current != null && t >= until.current) { a.pause(); audio.current = null; setPlaying(null); return; }
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -35,14 +60,17 @@ export function usePreview() {
     const a = new Audio(url);
     a.preload = "auto";
     audio.current = a;
+    gain.current = env.current ? gainFor(a) : null;
+    if (gain.current && env.current.fadeIn > 0) gain.current.gain.value = 0;
     if (at) a.currentTime = at;
     setPos(at || 0); setPlaying(t.id);
     a.onended = () => { if (audio.current === a) { setPlaying(null); setPos(0); } };
     const p = a.play(); if (p && p.catch) p.catch(() => {});
   };
-  const toggle = (t) => { if (playing === t.id) stop(); else { until.current = null; start(t, 0); } };
-  const seek = (t, at, stopAt) => {
+  const toggle = (t) => { if (playing === t.id) stop(); else { until.current = null; env.current = null; start(t, 0); } };
+  const seek = (t, at, stopAt, fades) => {
     until.current = stopAt == null ? null : stopAt;
+    env.current = fades ? { from: at, fadeIn: fades.fadeIn || 0, fadeOut: fades.fadeOut || 0 } : null;
     const x = Math.max(0, Math.min(at, Math.max(0, (t.duration || 0) - 0.05)));
     if (playing === t.id && audio.current) { audio.current.currentTime = x; setPos(x); } else start(t, x);
   };

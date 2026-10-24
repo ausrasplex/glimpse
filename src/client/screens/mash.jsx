@@ -41,15 +41,33 @@ function TextCard({ d, set, sample, db, me }) {
   const putStamp = (o) => set({ stamp: Object.assign({}, st, o) });
   const putLabel = (o) => set({ label: Object.assign({}, lb, o) });
   const look = lb.match ? matched(lb, st) : lb;
-  const box = d.shape === "landscape" ? { w: 320, h: 180 } : d.shape === "square" ? { w: 240, h: 240 } : { w: 198, h: 352 };
-  // Once the preview sticks below the header it shrinks to two thirds. The scroll position is adjusted by the
-  // height it gives up, so the controls under your finger don't jump; it grows back a little further up.
+  // The preview fits a set height (smaller once it sticks below the header) and the card's width, keeping the
+  // mash's shape. Landscape is limited by width, so it keeps its size when the preview sticks.
+  const ar = SHAPES[d.shape].ar;
+  const wrap = useRef(null);
+  const [room, setRoom] = useState(318);
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const measure = () => setRoom(Math.max(120, el.clientWidth - 32));
+    measure();
+    if (!window.ResizeObserver) return;
+    const ro = new ResizeObserver(measure); ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const fit = (h) => { const w = Math.min(room, Math.round(h * ar)); return { w, h: Math.round(w / ar) }; };
+  const full = fit(352), small = fit(235);
+  // Once it sticks it shrinks to the smaller height. The scroll position is adjusted by the height it gives up,
+  // so the controls under your finger don't jump; it grows back a little further up.
   const [stuck, setStuck] = useState(false);
+  const [stickAt, setStickAt] = useState(0);
   const mark = useRef(null);
+  const give = full.h - small.h;
   useEffect(() => {
     const el = mark.current, sc = el && el.closest(".scroll");
     if (!sc) return;
-    const give = box.h - Math.round(box.h * 2 / 3);
+    // Stick at the very top of the scrolling area, above its padding, so there's no gap under the header.
+    setStickAt(-(parseFloat(getComputedStyle(sc).paddingTop) || 0));
     let on = false;
     const check = () => {
       const top = el.getBoundingClientRect().top - sc.getBoundingClientRect().top;
@@ -58,8 +76,8 @@ function TextCard({ d, set, sample, db, me }) {
     };
     sc.addEventListener("scroll", check, { passive: true });
     return () => sc.removeEventListener("scroll", check);
-  }, [box.h]);
-  const pv = stuck ? { w: Math.round(box.w * 2 / 3), h: Math.round(box.h * 2 / 3) } : box;
+  }, [give]);
+  const pv = stuck ? small : full;
   const md = sample ? S.media(db, sample.mediaId) : null;
   const pf = S.prefs(db, me.id);
   const isDefault = JSON.stringify(cleanStamp(pf.stamp)) === JSON.stringify(st) && JSON.stringify(cleanLabel(pf.label)) === JSON.stringify(lb);
@@ -67,14 +85,22 @@ function TextCard({ d, set, sample, db, me }) {
   const music = !!t0 && d.audio !== "clips";
   const e = sample || { date: todayKey(), note: "A note from this day" };
   const [l1, l2] = shStampLines(st, e.date, e.note || "", 0);
+  // Behind the text, the clip as the mash will show it: filling the frame, or fitted with a blur or bars around it.
+  const pic = md ? (md.thumb ? "url(" + md.thumb + ") center/cover, " + md.grad : md.grad) : "linear-gradient(160deg,#C98A4B,#584E75)";
+  const cb = clipBox(md ? md.orient : d.shape, d.shape, d.fill);
+  const back = cb.inset ? <div style={{ position: "absolute", inset: 0, background: pic }} /> : (
+    <>
+      {d.fill === "blur" ? <div style={{ position: "absolute", inset: -12, background: pic, filter: "blur(10px) brightness(0.94)" }} /> : <div style={{ position: "absolute", inset: 0, background: "#000" }} />}
+      <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", width: cb.w, height: cb.h, background: pic }} />
+    </>
+  );
   const items = (st.on ? [{ look: st, lines: [l1, l2 || ""] }] : []).concat(music && d.musicLabel !== false ? [{ look, lines: [labelText(lb, t0.title, t0.artist)] }] : []);
   return (
     <div className="card stack gap16">
-      <div className="stack gap4"><span style={{ fontSize: 15, fontWeight: 700 }}>Text on the video</span><span className="small muted">The preview is to scale, in the fonts you pick.</span></div>
       <div ref={mark} aria-hidden="true" style={{ height: 0, marginBottom: -16 }} />
       {/* Stays in view just below the header while the controls scroll, but never leaves this card. */}
-      <div style={{ position: "sticky", top: 0, zIndex: 2, display: "flex", justifyContent: "center", margin: "0 -16px", padding: "10px 16px 12px", background: "var(--surface)", borderBottom: "1px solid var(--line-soft)" }}>
-        <TextPreview items={items} w={pv.w} h={pv.h} bg={md ? (md.thumb ? "url(" + md.thumb + ") center/cover, " + md.grad : md.grad) : "linear-gradient(160deg,#C98A4B,#584E75)"} />
+      <div ref={wrap} style={{ position: "sticky", top: stickAt, zIndex: 2, display: "flex", justifyContent: "center", margin: "0 -16px", padding: "10px 16px 12px", background: "var(--surface)", borderBottom: "1px solid var(--line-soft)" }}>
+        <TextPreview items={items} w={pv.w} h={pv.h} back={back} />
       </div>
       <Opts value={tab} onChange={setTab} options={[{ id: "stamp", label: "Date stamp" }, { id: "label", label: "Song title" }]} />
       {tab === "stamp" ? (
@@ -91,11 +117,15 @@ function TextCard({ d, set, sample, db, me }) {
       ) : (
         <div className="stack gap16" style={{ opacity: music ? 1 : 0.55 }}>
           <ToggleRow title="Song title" sub={!t0 ? "Add music below to show its title" : d.audio === "clips" ? "Music is off in Sound below" : d.musicLabel !== false ? "Shown in a corner while each track plays" : "No song title on the video"} on={d.musicLabel !== false} onChange={(v) => set({ musicLabel: v })} />
-          <div className="stack gap6"><span className="sec">Shows</span><Opts value={lb.show} onChange={(v) => putLabel({ show: v })} options={[{ id: "title", label: "Title" }, { id: "titleArtist", label: "Title – Artist" }, { id: "note", label: "♪ Title" }]} /></div>
-          <ToggleRow title="Match date stamp style" sub={lb.match ? "Same font, colours and box as the date stamp" : "Style the song title on its own"} on={lb.match} onChange={(v) => putLabel(v ? { match: true } : Object.assign(matched(lb, st), { match: false }))} />
-          {lb.match ? <div className="stack gap6"><span className="sec">Position</span><Opts value={lb.pos} onChange={(v) => putLabel({ pos: v })} options={[{ id: "tl", label: "↖ Top" }, { id: "tr", label: "Top ↗" }, { id: "bl", label: "↙ Bottom" }, { id: "br", label: "Bottom ↘" }]} /></div>
-            : <TextStyleControls look={lb} set={(v) => set({ label: Object.assign({}, v, { match: false }) })} onFont={() => setFontFor("label")} />}
-          {st.on && lb.pos === st.pos ? <span className="small faint">Both are in the same corner, so they stack: the date stamp nearest the edge.</span> : null}
+          {d.musicLabel !== false ? (
+            <>
+              <div className="stack gap6"><span className="sec">Shows</span><Opts value={lb.show} onChange={(v) => putLabel({ show: v })} options={[{ id: "title", label: "Title" }, { id: "titleArtist", label: "Title – Artist" }, { id: "note", label: "♪ Title" }]} /></div>
+              <ToggleRow title="Match date stamp style" sub={lb.match ? "Same font, colours and box as the date stamp" : "Style the song title on its own"} on={lb.match} onChange={(v) => putLabel(v ? { match: true } : Object.assign(matched(lb, st), { match: false }))} />
+              {lb.match ? <div className="stack gap6"><span className="sec">Position</span><Opts value={lb.pos} onChange={(v) => putLabel({ pos: v })} options={[{ id: "tl", label: "↖ Top" }, { id: "tr", label: "Top ↗" }, { id: "bl", label: "↙ Bottom" }, { id: "br", label: "Bottom ↘" }]} /></div>
+                : <TextStyleControls look={lb} set={(v) => set({ label: Object.assign({}, v, { match: false }) })} onFont={() => setFontFor("label")} />}
+              {st.on && lb.pos === st.pos ? <span className="small faint">Both are in the same corner, so they stack: the date stamp nearest the edge.</span> : null}
+            </>
+          ) : null}
         </div>
       )}
       <button className="chipbtn" disabled={isDefault} style={{ alignSelf: "flex-start", opacity: isDefault ? 0.5 : 1 }} onClick={() => { act("setPrefs", { stamp: st, label: lb }).then(() => toast("Saved as your default text style")).catch(() => {}); }}>{isDefault ? "This is your default" : "Save as my default"}</button>
@@ -430,7 +460,7 @@ export function MashStep3() {
             <div style={{ paddingLeft: 32 }}><Opts value={d.clipMode === "cap" ? d.cap : null} onChange={(v) => set({ clipMode: "cap", cap: v })} options={[0.5, 1, 2, 3].map((c) => ({ id: c, label: c + "s" }))} /></div>
           </div>
         </Section>
-        <TextCard d={d} set={set} sample={picked.find((e) => e.note) || picked[0]} db={db} me={me} />
+        <Section title="Text" right="Preview is to scale"><TextCard d={d} set={set} sample={picked.find((e) => e.note) || picked[0]} db={db} me={me} /></Section>
         {x && x.shared ? <div className="card"><ToggleRow title="Share with project" sub={"Everyone in " + x.p.name + " can watch it. Off keeps it private to you."} on={d.shared} onChange={(v) => set({ shared: v })} /></div> : null}
 
         <div className="stack gap12">
@@ -472,7 +502,6 @@ export function MashStep3() {
                 <span className="stack gap2"><span style={{ fontSize: 14, fontWeight: 600 }}>If the music runs out first</span><span className="small muted">Music lasts {fmtDur(musicTotal)}, the mash {fmtDur(secs)}{musicTotal >= secs ? ". Music fades out with the mash." : "."}</span></span>
                 {seg([{ id: "loop", label: "Loop tracklist" }, { id: "fade", label: "Fade out" }], d.whenEnds, "whenEnds")}
               </div>
-              <div className="card" style={{ opacity: d.audio === "clips" ? 0.45 : 1 }}><ToggleRow title="Song title on screen" sub={d.audio === "clips" ? "Music is off in Sound below" : d.musicLabel !== false ? "Track name shows in a corner while it plays" : "No song title on the video"} on={d.musicLabel !== false} onChange={(v) => set({ musicLabel: v })} /></div>
             </>
           ) : null}
         </div>
@@ -541,7 +570,7 @@ export function TrackSection({ params }) {
           <div style={{ position: "relative" }}>
             <div className="hrow" style={{ gap: 1, height: 72 }}>
               {bars.map((v, k) => { const tt = k * per; const inSel = tt + per > start && tt < end; const fade = inSel && ((tr.fadeIn && tt < start + tr.fadeIn) || (tr.fadeOut && tt > end - tr.fadeOut)); return (
-                <button key={k} aria-label={"Start at " + fmt(tt)} onClick={() => { const s2 = clampT(snapT(tt)); setTr({ start: s2 }); if (preview) pv.seek(t, s2, Math.min(dur, s2 + segLen)); }} style={{ flex: 1, height: "100%", padding: 0, border: "none", background: "transparent", display: "flex", alignItems: "center" }}><span style={{ width: "100%", height: Math.max(6, Math.round(v * 100)) + "%", borderRadius: 1, background: inSel ? "var(--accent)" : "var(--line-strong)", opacity: fade ? 0.45 : 1 }} /></button>); })}
+                <button key={k} aria-label={"Start at " + fmt(tt)} onClick={() => { const s2 = clampT(snapT(tt)); setTr({ start: s2 }); if (preview) pv.seek(t, s2, Math.min(dur, s2 + segLen), tr); }} style={{ flex: 1, height: "100%", padding: 0, border: "none", background: "transparent", display: "flex", alignItems: "center" }}><span style={{ width: "100%", height: Math.max(6, Math.round(v * 100)) + "%", borderRadius: 1, background: inSel ? "var(--accent)" : "var(--line-strong)", opacity: fade ? 0.45 : 1 }} /></button>); })}
             </div>
             <div style={{ position: "absolute", top: -6, bottom: -6, left: (start / dur * 100) + "%", width: 2, marginLeft: -1, background: "var(--fg)", pointerEvents: "none" }} />
             {preview ? <div style={{ position: "absolute", top: 0, bottom: 0, left: ((start + ph) / dur * 100) + "%", width: 2, background: "#fff", opacity: 0.7, pointerEvents: "none" }} /> : null}
@@ -549,7 +578,7 @@ export function TrackSection({ params }) {
           <div className="hrow between tiny" style={{ marginTop: 8, color: "var(--ghost)" }}>{[0, 0.25, 0.5, 0.75, 1].map((f) => <span key={f}>{fmtDur(dur * f)}</span>)}</div>
         </div>
         <div className="hrow gap14 card">
-          <button aria-label={preview ? "Stop preview" : "Preview section"} onClick={() => (preview ? pv.toggle(t) : pv.seek(t, start, end))} style={{ width: 46, height: 46, flexShrink: 0, borderRadius: "50%", background: "var(--accent)", border: "none", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-ink)" }}><Icon name={preview ? "pause" : "play"} size={18} /></button>
+          <button aria-label={preview ? "Stop preview" : "Preview section"} onClick={() => (preview ? pv.toggle(t) : pv.seek(t, start, end, tr))} style={{ width: 46, height: 46, flexShrink: 0, borderRadius: "50%", background: "var(--accent)", border: "none", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent-ink)" }}><Icon name={preview ? "pause" : "play"} size={18} /></button>
           <span className="stack gap2" style={{ flex: 1 }}><span className="num" style={{ fontSize: 22, fontWeight: 700 }}>From {fmt(start)}</span><span className="small muted">Plays to {fmt(end)} · {snap ? "on beat " + (Math.round((start - offset) / beat) + 1) : "free position"}</span></span>
           <button className="chipbtn" style={{ width: 34, padding: "7px 0" }} aria-label="One beat earlier" onClick={() => setTr({ start: clampT(start - beat) })}>‹</button>
           <button className="chipbtn" style={{ width: 34, padding: "7px 0" }} aria-label="One beat later" onClick={() => setTr({ start: clampT(start + beat) })}>›</button>
