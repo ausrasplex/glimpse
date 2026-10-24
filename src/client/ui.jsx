@@ -187,7 +187,7 @@ export function Dialog({ open, onClose, title, body, children }) {
   );
 }
 
-export function Confirm({ open, onClose, title, body, confirm, onConfirm, danger, children }) {
+export function Confirm({ open, onClose, title, body, confirm, onConfirm, danger, children, cancel }) {
   return (
     <Sheet open={open} onClose={onClose}>
       <div className="stack gap14">
@@ -197,7 +197,7 @@ export function Confirm({ open, onClose, title, body, confirm, onConfirm, danger
         </div>
         {children}
         <div className="grid2">
-          <button className="btn sm ghost" onClick={onClose}>Cancel</button>
+          <button className="btn sm ghost" onClick={onClose}>{cancel || "Cancel"}</button>
           <button className={"btn sm" + (danger ? " danger" : "")} onClick={onConfirm}>{confirm}</button>
         </div>
       </div>

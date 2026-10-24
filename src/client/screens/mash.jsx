@@ -1,7 +1,7 @@
 import React from "react";
 import { useApp, live } from "../store.jsx";
 import { Icon } from "../icons.jsx";
-import { Screen, TopBar, Steps, Sheet, Thumb, ClipView, PlayBadge, Menu, Choice, Opts, Toggle, ToggleRow, Stepper, Section, useDragList, move } from "../ui.jsx";
+import { Screen, TopBar, Steps, Sheet, Thumb, ClipView, PlayBadge, Menu, Choice, Opts, Toggle, ToggleRow, Stepper, Section, Confirm, useDragList, move } from "../ui.jsx";
 import * as S from "../sel.js";
 import { QUALITY, OUTPUT, stampDate as shStampDate, stampLines as shStampLines } from "../../shared/mash";
 import { STAMP_DEFAULT, LABEL_DEFAULT, cleanStamp, cleanLabel, matched, labelText } from "../../shared/textstyle";
@@ -10,7 +10,7 @@ import { barsFrom } from "../../shared/peaks";
 import { usePreview } from "./music.jsx";
 import { MONTH, MON, parseKey, todayKey, addDays, fullDay, dayLabel, monthDay, fmtDur, shortDate, rel, uid, hexA, gb } from "../util.js";
 
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useLayoutEffect, useRef } = React;
 
 export const SHAPES = {
   portrait: { label: "Portrait", ratio: "9:16", w: 26, h: 46, res: "1080 × 1920", ar: 9 / 16 },
@@ -62,21 +62,33 @@ function TextCard({ d, set, sample, db, me }) {
   const [stuck, setStuck] = useState(false);
   const [stickAt, setStickAt] = useState(0);
   const mark = useRef(null);
+  const scroller = useRef(null);
+  const shift = useRef(0);
   const give = full.h - small.h;
   useEffect(() => {
     const el = mark.current, sc = el && el.closest(".scroll");
     if (!sc) return;
+    scroller.current = sc;
     // Stick at the very top of the scrolling area, above its padding, so there's no gap under the header.
     setStickAt(-(parseFloat(getComputedStyle(sc).paddingTop) || 0));
+    // The browser's own scroll anchoring would also adjust for the size change, doubling the move and making
+    // the preview flip back and forth; this page makes the adjustment itself instead.
+    const anchor = sc.style.overflowAnchor;
+    sc.style.overflowAnchor = "none";
     let on = false;
     const check = () => {
       const top = el.getBoundingClientRect().top - sc.getBoundingClientRect().top;
-      if (!on && top < 0) { on = true; setStuck(true); sc.scrollTop -= give; }
-      else if (on && top > give + 4) { on = false; setStuck(false); sc.scrollTop += give; }
+      if (!on && top < 0) { on = true; shift.current = -give; setStuck(true); }
+      else if (on && top > give + 4) { on = false; shift.current = give; setStuck(false); }
     };
     sc.addEventListener("scroll", check, { passive: true });
-    return () => sc.removeEventListener("scroll", check);
+    return () => { sc.removeEventListener("scroll", check); sc.style.overflowAnchor = anchor; };
   }, [give]);
+  // Right after the new size is laid out (before it's drawn), move the page by the height given up or taken back.
+  useLayoutEffect(() => {
+    const sc = scroller.current;
+    if (sc && shift.current) { sc.scrollTop += shift.current; shift.current = 0; }
+  }, [stuck]);
   const pv = stuck ? small : full;
   const md = sample ? S.media(db, sample.mediaId) : null;
   const pf = S.prefs(db, me.id);
@@ -603,6 +615,8 @@ export function TrackSection({ params }) {
 export function MashLibrary() {
   const { db, act, local, refresh, nav, me, toast, setMashDraft } = useApp();
   const [menu, setMenu] = useState(null);
+  const [del, setDel] = useState(null);
+  const [stop, setStop] = useState(null);
   const mine = db.mashes.filter((m) => m.ownerId === me.id).sort((a, b) => b.createdAt - a.createdAt);
   const busy = mine.filter((m) => m.status !== "ready");
   const ready = mine.filter((m) => m.status === "ready");
@@ -647,7 +661,7 @@ export function MashLibrary() {
           { label: "Download", icon: "download", onClick: () => { setMenu(null); toast("The real app saves “" + m.title + "” as an MP4 here"); } },
           p && S.activeMembers(db, p.id).length > 1 ? { label: m.shared ? "Make private" : "Share with " + p.name, icon: "share", onClick: () => { setMenu(null); act("setMashShared", { mashId: m.id, shared: !m.shared }).then(() => toast(m.shared ? "Now private to you" : "Shared with " + p.name)).catch(() => {}); } } : null,
           "-",
-          { label: "Delete", icon: "trash", danger: true, onClick: () => remove(m) }
+          { label: "Delete", icon: "trash", danger: true, onClick: () => { setMenu(null); setDel(m); } }
         ]} /></div> : null}
       </div>
     );
@@ -675,7 +689,7 @@ export function MashLibrary() {
                     <div className="bar"><span style={{ width: m.progress + "%" }} /></div>
                     <div className="hrow between small muted"><span className="num">{m.status === "queued" ? "Waiting in queue" : (m.progress < 70 ? "Joining clips… " : m.progress < 92 ? "Adding music… " : "Finishing… ") + Math.round(m.progress) + "%"}</span><span>{m.status === "queued" ? "" : "about " + left + "s left"}</span></div>
                   </div>
-                  <button className="iconbtn plain" aria-label={"Cancel " + m.title} onClick={() => { act("deleteMash", { mashId: m.id }).then(() => toast("Render cancelled")).catch(() => {}); }}><Icon name="close" size={16} color="var(--muted)" /></button>
+                  <button className="iconbtn plain" aria-label={"Cancel " + m.title} onClick={() => setStop(m)}><Icon name="close" size={16} color="var(--muted)" /></button>
                 </div>
               );
             })}
@@ -688,6 +702,8 @@ export function MashLibrary() {
         {sharedWithMe.length ? <Section title="Shared in your projects">{sharedWithMe.map((m) => <Card key={m.id} m={m} other />)}</Section> : null}
         <div style={{ height: 16 }} />
       </div>
+      <Confirm open={!!del} onClose={() => setDel(null)} title={del ? "Delete “" + del.title + "”?" : ""} body={del ? "Frees " + Math.round(S.mashSize(del) / 1e6) + " MB. Your clips stay, so you can always render it again." : ""} confirm="Delete" danger onConfirm={() => { const m = del; setDel(null); remove(m); }} />
+      <Confirm open={!!stop} onClose={() => setStop(null)} title={stop ? "Cancel “" + stop.title + "”?" : ""} body={stop ? (stop.status === "rendering" ? "It's " + Math.round(stop.progress || 0) + "% done. " : "") + "Your clips and settings aren't lost: you can start the mash again any time." : ""} confirm="Cancel render" cancel="Keep rendering" danger onConfirm={() => { const m = stop; setStop(null); act("deleteMash", { mashId: m.id }).then(() => toast("Render cancelled")).catch(() => {}); }} />
     </Screen>
   );
 }
