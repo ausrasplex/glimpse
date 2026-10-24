@@ -93,6 +93,8 @@ export function Calendar({ params }) {
   const now = new Date();
   const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const [day, setDay] = useState(null);
+  // The last day tapped keeps its outline after its panel closes.
+  const [chosen, setChosen] = useState(null);
   if (!cur) return <NoProjects />;
   const entries = S.projectEntries(db, cur.p.id);
   const byDay = {};
@@ -128,7 +130,7 @@ export function Calendar({ params }) {
             const isFuture = c.key > t;
             const bg = m && c.inMonth ? (m.thumb ? "url(" + m.thumb + ") center/cover" : m.grad) : undefined;
             return (
-              <button key={c.key} disabled={isFuture || !c.inMonth} onClick={() => setDay(c.key)} aria-label={fullDay(c.key) + (es.length ? ", " + es.length + " clip" + (es.length > 1 ? "s" : "") : "")} className={"day" + (c.inMonth ? "" : " out") + (es.length && c.inMonth ? " has" : "") + (c.key === t ? " today" : "")} style={{ background: bg, opacity: isFuture && c.inMonth ? 0.45 : 1, cursor: isFuture || !c.inMonth ? "default" : "pointer" }}>
+              <button key={c.key} disabled={isFuture || !c.inMonth} onClick={() => { setDay(c.key); setChosen(c.key); }} aria-label={fullDay(c.key) + (es.length ? ", " + es.length + " clip" + (es.length > 1 ? "s" : "") : "")} className={"day" + (c.inMonth ? "" : " out") + (es.length && c.inMonth ? " has" : "") + (c.key === t ? " today" : "") + (c.key === chosen ? " sel" : "")} style={{ background: bg, opacity: isFuture && c.inMonth ? 0.45 : 1, cursor: isFuture || !c.inMonth ? "default" : "pointer" }}>
                 <span className="n">{c.n}</span>
                 {es.length > 1 && c.inMonth ? <span className="count">{es.length}</span> : null}
               </button>
@@ -183,7 +185,7 @@ function DaySheet({ day, setDay, cur, byDay }) {
               <Thumb m={c.m} style={{ width: 84, height: 112, borderRadius: 11 }}><PlayBadge /><span style={{ position: "absolute", left: 5, bottom: 5, padding: "1px 5px", borderRadius: 5, background: "rgba(0,0,0,0.5)", fontSize: 9.5, fontWeight: 700 }}>{c.len.toFixed(1)}s</span></Thumb>
               <span className="stack gap6" style={{ flex: 1, minWidth: 0 }}>
                 <span className="small muted">{new Date(e.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{e.authorId !== me.id ? " · " + S.firstName(author) : ""}</span>
-                <span style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.35 }}>{e.note || <span className="faint">No note</span>}</span>
+                {e.note ? <span style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.35 }}>{e.note}</span> : null}
                 {e.mood ? <span className="tag" style={{ fontSize: 11.5, padding: "3px 9px", width: "fit-content", color: "#BDB7AD" }}><span className="dot" style={{ background: S.moodColor(db, e.authorId, e.mood) }} />{e.mood}</span> : null}
                 {also.length ? <span className="small faint">Also in {also.join(", ")}</span> : null}
               </span>
@@ -296,7 +298,7 @@ export function EntryDetail({ params }) {
             : <button aria-label="Pause" onClick={() => setPlaying(false)} style={{ position: "absolute", inset: "70px 0 90px", background: "transparent", border: "none" }} />}
           <div className="stack gap6" style={{ position: "absolute", left: 20, right: 20, bottom: 18, pointerEvents: "none" }}>
             <span style={{ fontSize: 13, color: "var(--fg-2)" }}>{fullDay(e.date)} · {new Date(e.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
-            <span style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.25 }}>{e.note || "No note"}</span>
+            {e.note ? <span style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.25 }}>{e.note}</span> : null}
           </div>
         </div>
         <div className="pad stack gap18" style={{ paddingTop: 16 }}>

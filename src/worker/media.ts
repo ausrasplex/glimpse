@@ -1,5 +1,5 @@
 // Uploaded clips and photos: probe, playback copy, poster, frame strip. Also Immich imports.
-import { mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, rm, stat, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { createWriteStream } from "node:fs";
@@ -12,6 +12,7 @@ import { decrypt } from "../server/crypto";
 import { env } from "../server/env";
 import { ffmpeg, probe, orientOf, run } from "./ff";
 import { takenDayFrom } from "../shared/dates";
+import { embeddedVideoAt } from "../shared/media";
 
 export const STRIP_FRAMES = 20;
 export const tmpDir = async (name: string) => { const d = join(env.dataDir, "tmp", name); await mkdir(d, { recursive: true }); return d; };
@@ -43,6 +44,45 @@ async function readableImage(src: string, dir: string): Promise<string> {
   return out;
 }
 
+// A motion photo's video part: where it starts and how long it runs, if there is one ffmpeg can read.
+async function embeddedMotion(file: string, dir: string): Promise<{ at: number; duration: number } | null> {
+  try {
+    const buf = await readFile(file);
+    const at = embeddedVideoAt(buf);
+    if (at == null) return null;
+    const out = join(dir, "motion.mp4");
+    await writeFile(out, buf.subarray(at));
+    const p = await probe(out);
+    return p.vcodec && p.duration >= 0.3 ? { at, duration: Math.round(p.duration * 10) / 10 } : null;
+  } catch { return null; }
+}
+
+// Make a new video glimpse from a motion photo's video part: cut out of the original, or copied from Immich.
+export async function motionVideo(mediaId: string, fromId: string) {
+  const f = await db.query.media.findFirst({ where: eq(schema.media.id, fromId) });
+  const src = f?.motionVideo || "";
+  if (!f || !f.originalKey || !src) { await setMedia(mediaId, { status: "FAILED", error: "That photo has no video part." }); return; }
+  if (src.startsWith("immich:")) return importImmich(mediaId, f.ownerId, src.slice(7));
+  const dir = await tmpDir("motion-" + mediaId);
+  try {
+    const ext = (f.originalKey.match(/\.[a-z0-9]+$/i) || [".jpg"])[0];
+    const orig = join(dir, "photo" + ext);
+    await downloadTo(f.originalKey, orig);
+    const buf = await readFile(orig);
+    const out = join(dir, "original.mp4");
+    await writeFile(out, buf.subarray(Number(src.slice(9))));
+    const key = keys.mediaOriginal(f.ownerId, mediaId, ".mp4");
+    await putFile(key, out, "video/mp4");
+    await setMedia(mediaId, { originalKey: key, size: await size(out), mime: "video/mp4", status: "PROCESSING", progress: 15 });
+  } catch (e) {
+    await setMedia(mediaId, { status: "FAILED", error: "Couldn't get the video from this photo. " + (e as Error).message.slice(0, 300) });
+    return;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+  await processMedia(mediaId);
+}
+
 export async function processMedia(mediaId: string) {
   const m = await db.query.media.findFirst({ where: eq(schema.media.id, mediaId) });
   if (!m || !m.originalKey) return;
@@ -63,12 +103,14 @@ export async function processMedia(mediaId: string) {
       await ffmpeg(["-i", img, "-frames:v", "1", "-vf", "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1920,ih))'", "-q:v", "3", poster]);
       const pp = await probe(poster);
       const taken = m.takenDay ? null : await photoTaken(orig, await ownerTz(m.ownerId));
+      const motion = await embeddedMotion(orig, dir);
       const posterKey = keys.mediaPoster(m.ownerId, m.id);
       await putFile(posterKey, poster, "image/jpeg");
       await setMedia(mediaId, {
         status: "READY", progress: 100, posterKey, derivedSize: await size(poster), width: pp.width || p.width, height: pp.height || p.height,
         orient: orientOf(pp.width || p.width, pp.height || p.height), duration: 10, codec: ext.replace(".", "").toUpperCase(), converted: /heic|heif/i.test(ext),
-        ...(taken ? { takenDay: taken.day, takenAt: m.takenAt ?? taken.at } : {})
+        ...(taken ? { takenDay: taken.day, takenAt: m.takenAt ?? taken.at } : {}),
+        ...(motion ? { motionVideo: "embedded:" + motion.at, motionDuration: motion.duration } : {})
       });
       return;
     }
@@ -129,7 +171,7 @@ export async function importImmich(mediaId: string, userId: string, assetId: str
   if (!m) return;
   try {
     await setMedia(mediaId, { status: "UPLOADING", progress: 5 });
-    const info = (await (await immichFetch(userId, `/api/assets/${encodeURIComponent(assetId)}`)).json()) as { type?: string; originalFileName?: string; originalMimeType?: string; fileCreatedAt?: string; localDateTime?: string };
+    const info = (await (await immichFetch(userId, `/api/assets/${encodeURIComponent(assetId)}`)).json()) as { type?: string; originalFileName?: string; originalMimeType?: string; fileCreatedAt?: string; localDateTime?: string; livePhotoVideoId?: string | null };
     const name = info.originalFileName || "immich";
     const ext = (name.match(/\.[a-z0-9]+$/i) || [info.type === "IMAGE" ? ".jpg" : ".mp4"])[0].toLowerCase();
     const key = keys.mediaOriginal(userId, mediaId, ext);
@@ -145,6 +187,15 @@ export async function importImmich(mediaId: string, userId: string, assetId: str
     const taken = info.fileCreatedAt ? new Date(info.fileCreatedAt) : null;
     const local = info.localDateTime ? takenDayFrom(info.localDateTime.replace(/Z$/i, ""), "UTC") : null;
     await setMedia(mediaId, { originalKey: key, size: bytes, fileName: name, mime: info.originalMimeType || null, kind: info.type === "IMAGE" ? "photo" : "video", takenAt: taken && !isNaN(taken.getTime()) ? taken : null, takenDay: local ? local.day : null, status: "PROCESSING", progress: 15 });
+    // Live Photos (and motion photos Immich has split): Immich keeps the video as its own asset.
+    if (info.type === "IMAGE" && info.livePhotoVideoId) {
+      try {
+        const v = (await (await immichFetch(userId, "/api/assets/" + encodeURIComponent(info.livePhotoVideoId))).json()) as { duration?: string };
+        const [h, mi, se] = String(v.duration || "0:0:0").split(":").map(Number);
+        const dur = (h || 0) * 3600 + (mi || 0) * 60 + (se || 0);
+        if (dur >= 0.3) await setMedia(mediaId, { motionVideo: "immich:" + info.livePhotoVideoId, motionDuration: Math.round(dur * 10) / 10 });
+      } catch { /* no video part then */ }
+    }
     await processMedia(mediaId);
   } catch (e) {
     console.error("[immich]", mediaId, (e as Error).message);

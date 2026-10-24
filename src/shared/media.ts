@@ -52,6 +52,22 @@ export function sniffKind(b: Uint8Array): "video" | "photo" | null {
   return null;
 }
 
+/**
+ * Where the short video inside a motion photo starts (Google and Samsung add an MP4 after the picture), or null.
+ * Found by its "ftyp" box; the photo's own ftyp (HEIC) at the very start is skipped, as are photo brands.
+ */
+export function embeddedVideoAt(b: Uint8Array): number | null {
+  for (let i = 12; i + 8 <= b.length; i++) {
+    if (b[i] !== 0x66 || b[i + 1] !== 0x74 || b[i + 2] !== 0x79 || b[i + 3] !== 0x70) continue;
+    const len = ((b[i - 4] << 24) | (b[i - 3] << 16) | (b[i - 2] << 8) | b[i - 1]) >>> 0;
+    if (len < 16 || len > 256 || len % 4) continue;
+    const brand = ascii(b, i + 4, 4);
+    if (!/^[A-Za-z0-9 ]{4}$/.test(brand) || PHOTO_BRANDS.has(brand)) continue;
+    return i - 4;
+  }
+  return null;
+}
+
 /** Longest clip a glimpse can keep, in seconds. 10 unless the admin turned on longer clips; max 0 means no limit. */
 export const CLIP_MAX_DEFAULT = 10;
 export const CLIP_NO_LIMIT = 36000;

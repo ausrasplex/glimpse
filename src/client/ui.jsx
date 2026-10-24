@@ -48,24 +48,19 @@ export function Steps({ n, of }) {
 }
 
 export function TabBar({ active }) {
-  const { nav, setDraft } = useApp();
+  const { nav } = useApp();
   const tabs = [
     { id: "home", label: "Home", icon: "home" },
     { id: "calendar", label: "Calendar", icon: "calendar" },
-    null,
     { id: "mash", label: "Mash", icon: "mash" },
     { id: "settings", label: "Settings", icon: "settings" }
   ];
   return (
     <nav className="tabbar" aria-label="Main">
-      {tabs.map((t, i) => t ? (
+      {tabs.map((t) => (
         <button key={t.id} className={"tab" + (active === t.id ? " on" : "")} aria-current={active === t.id ? "page" : undefined} onClick={() => nav.reset(t.id)}>
           <Icon name={t.icon} size={21} />
           <span>{t.label}</span>
-        </button>
-      ) : (
-        <button key="fab" className="fab" aria-label="New entry" onClick={() => { setDraft(null); nav.go("capture"); }}>
-          <Icon name="plus" size={24} stroke={2.4} />
         </button>
       ))}
     </nav>
@@ -235,7 +230,7 @@ export function Opts({ options, value, onChange, cols }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(" + (cols || options.length) + ", minmax(0,1fr))", gap: 6 }}>
       {options.map((o) => (
-        <button key={String(o.id)} className={"opt" + (o.id === value ? " on" : "")} aria-pressed={o.id === value} onClick={() => onChange(o.id)} disabled={o.disabled}>
+        <button key={String(o.id)} className={"opt" + (o.id === value ? " on" : "")} aria-pressed={o.id === value} onClick={() => onChange(o.id)} disabled={o.disabled} aria-label={o.aria}>
           {o.label}{o.sub ? <span style={{ display: "block", fontSize: 10.5, opacity: 0.75, fontWeight: 600, marginTop: 1 }}>{o.sub}</span> : null}
         </button>
       ))}

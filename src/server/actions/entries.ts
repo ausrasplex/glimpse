@@ -166,6 +166,16 @@ export const markViewed: Action = async ({ db, user }, a) => {
   if (m) await db.update(schema.members).set({ lastViewedAt: new Date() }).where(eq(schema.members.id, m.id));
 };
 
+// Use a motion photo's video part instead of the still: a new video, made by the worker.
+export const useMotionVideo: Action = async ({ db, user }, a) => {
+  const f = await myMedia(db, str(a.mediaId, 60), user.id);
+  if (f.kind !== "photo" || !f.motionVideo) fail(400, "That photo has no video part.");
+  const mid = id("m_");
+  await db.insert(schema.media).values({ id: mid, ownerId: user.id, kind: "video", status: "UPLOADING", fileName: f.fileName, takenDay: f.takenDay, takenAt: f.takenAt, clipStart: 0, clipEnd: 1 });
+  await enqueue.motionVideo(mid, f.id);
+  return { mediaId: mid };
+};
+
 // Copy a video or photo from the person's own Immich library.
 export const immichImport: Action = async ({ db, user, settings }, a) => {
   if (!settings.immich.on) fail(400, "Immich import is turned off.");

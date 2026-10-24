@@ -395,7 +395,7 @@ export function SetupWizard() {
           <div className="stack gap16">
             <H sub="How much space each new person gets by default. You can change anyone's limit later, and your own account is unlimited.">Storage for new people</H>
             {info && info.storage && info.storage.free ? <div className="card hrow between"><span className="stack gap2"><span className="muted" style={{ fontSize: 13 }}>Free in your media folder</span><span style={{ fontSize: 20, fontWeight: 700 }}>{info.storage.free}</span></span></div> : null}
-            <Opts value={f.quota} onChange={(v) => set("quota", v)} options={[{ id: 1, label: "1 GB" }, { id: 5, label: "5 GB" }, { id: 10, label: "10 GB" }, { id: 25, label: "25 GB" }, { id: 0, label: "None" }]} />
+            <Opts value={f.quota} onChange={(v) => set("quota", v)} options={[{ id: 1, label: "1 GB" }, { id: 5, label: "5 GB" }, { id: 10, label: "10 GB" }, { id: 25, label: "25 GB" }, { id: 0, label: "∞", aria: "Unlimited" }]} />
           </div>
         ) : step === 5 ? (
           <div className="stack gap14">

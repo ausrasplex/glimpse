@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { kindOfFile, sniffKind, ACCEPT } from "../src/shared/media";
+import { kindOfFile, sniffKind, ACCEPT, embeddedVideoAt } from "../src/shared/media";
 
 const bytes = (...parts: (string | number[])[]) => {
   const out: number[] = [];
@@ -41,4 +41,15 @@ test("first bytes reveal what a file really is", () => {
   assert.equal(sniffKind(bytes("%PDF-1.7")), null);
   assert.equal(sniffKind(bytes("PK", [3, 4])), null);
   assert.equal(sniffKind(new Uint8Array(4)), null);
+});
+test("the video inside a motion photo is found after the picture", () => {
+  const photo = bytes([0xff, 0xd8, 0xff, 0xe1], "Exif");
+  const mp4 = bytes([0, 0, 0, 0x1c], "ftypmp42", [0, 0, 0, 0], "isommp42");
+  const both = new Uint8Array(photo.length + mp4.length); both.set(photo); both.set(mp4, photo.length);
+  assert.equal(embeddedVideoAt(both), photo.length);
+  assert.equal(embeddedVideoAt(photo), null);
+  // A HEIC's own ftyp at the start isn't a video, nor is a photo brand later on.
+  assert.equal(embeddedVideoAt(bytes([0, 0, 0, 0x18], "ftypheic", [0, 0, 0, 0], "mif1heic")), null);
+  const heicMotion = new Uint8Array(400); heicMotion.set(bytes([0, 0, 0, 0x18], "ftypheic").subarray(0, 12)); heicMotion.set(mp4.subarray(0, 28), 300);
+  assert.equal(embeddedVideoAt(heicMotion), 300);
 });

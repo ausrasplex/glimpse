@@ -32,71 +32,15 @@ export function clipBox(orient, shape, fill) {
 export const stampOf = (m) => cleanStamp(m.stamp || { on: m.overlay !== false });
 export const stampDate = (k, format) => shStampDate(k, format);
 
-// One preview for both, with a tab for each one's settings.
-function TextCard({ d, set, sample, db, me }) {
-  const { act, toast } = useApp();
-  const [tab, setTab] = useState("stamp");
-  const [fontFor, setFontFor] = useState(null);
+// The text a mash puts on clip number i (the date stamp and the song title), and the clip behind it as the mash shows it.
+function textScene(db, d, e, i) {
   const st = cleanStamp(d.stamp), lb = cleanLabel(d.label);
-  const putStamp = (o) => set({ stamp: Object.assign({}, st, o) });
-  const putLabel = (o) => set({ label: Object.assign({}, lb, o) });
   const look = lb.match ? matched(lb, st) : lb;
-  // The preview fits a set height (smaller once it sticks below the header) and the card's width, keeping the
-  // mash's shape. Landscape is limited by width, so it keeps its size when the preview sticks.
-  const ar = SHAPES[d.shape].ar;
-  const wrap = useRef(null);
-  const [room, setRoom] = useState(318);
-  useEffect(() => {
-    const el = wrap.current;
-    if (!el) return;
-    const measure = () => setRoom(Math.max(120, el.clientWidth - 32));
-    measure();
-    if (!window.ResizeObserver) return;
-    const ro = new ResizeObserver(measure); ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  const fit = (h) => { const w = Math.min(room, Math.round(h * ar)); return { w, h: Math.round(w / ar) }; };
-  const full = fit(352), small = fit(235);
-  // Once it sticks it shrinks to the smaller height. The scroll position is adjusted by the height it gives up,
-  // so the controls under your finger don't jump; it grows back a little further up.
-  const [stuck, setStuck] = useState(false);
-  const [stickAt, setStickAt] = useState(0);
-  const mark = useRef(null);
-  const scroller = useRef(null);
-  const shift = useRef(0);
-  const give = full.h - small.h;
-  useEffect(() => {
-    const el = mark.current, sc = el && el.closest(".scroll");
-    if (!sc) return;
-    scroller.current = sc;
-    // Stick at the very top of the scrolling area, above its padding, so there's no gap under the header.
-    setStickAt(-(parseFloat(getComputedStyle(sc).paddingTop) || 0));
-    // The browser's own scroll anchoring would also adjust for the size change, doubling the move and making
-    // the preview flip back and forth; this page makes the adjustment itself instead.
-    const anchor = sc.style.overflowAnchor;
-    sc.style.overflowAnchor = "none";
-    let on = false;
-    const check = () => {
-      const top = el.getBoundingClientRect().top - sc.getBoundingClientRect().top;
-      if (!on && top < 0) { on = true; shift.current = -give; setStuck(true); }
-      else if (on && top > give + 4) { on = false; shift.current = give; setStuck(false); }
-    };
-    sc.addEventListener("scroll", check, { passive: true });
-    return () => { sc.removeEventListener("scroll", check); sc.style.overflowAnchor = anchor; };
-  }, [give]);
-  // Right after the new size is laid out (before it's drawn), move the page by the height given up or taken back.
-  useLayoutEffect(() => {
-    const sc = scroller.current;
-    if (sc && shift.current) { sc.scrollTop += shift.current; shift.current = 0; }
-  }, [stuck]);
-  const pv = stuck ? small : full;
-  const md = sample ? S.media(db, sample.mediaId) : null;
-  const pf = S.prefs(db, me.id);
-  const isDefault = JSON.stringify(cleanStamp(pf.stamp)) === JSON.stringify(st) && JSON.stringify(cleanLabel(pf.label)) === JSON.stringify(lb);
   const t0 = d.tracks.length ? S.track(db, d.tracks[0].trackId) : null;
   const music = !!t0 && d.audio !== "clips";
-  const e = sample || { date: todayKey(), note: "A note from this day" };
-  const [l1, l2] = shStampLines(st, e.date, e.note || "", 0);
+  const ent = e || { date: todayKey(), note: "A note from this day" };
+  const md = e ? S.media(db, e.mediaId) : null;
+  const [l1, l2] = shStampLines(st, ent.date, ent.note || "", i);
   // Behind the text, the clip as the mash will show it: filling the frame, or fitted with a blur or bars around it.
   const pic = md ? (md.thumb ? "url(" + md.thumb + ") center/cover, " + md.grad : md.grad) : "linear-gradient(160deg,#C98A4B,#584E75)";
   const cb = clipBox(md ? md.orient : d.shape, d.shape, d.fill);
@@ -106,14 +50,83 @@ function TextCard({ d, set, sample, db, me }) {
       <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", width: cb.w, height: cb.h, background: pic }} />
     </>
   );
-  const items = (st.on ? [{ look: st, lines: [l1, l2 || ""] }] : []).concat(music && d.musicLabel !== false ? [{ look, lines: [labelText(lb, t0.title, t0.artist)] }] : []);
+  const label = music && d.musicLabel !== false;
+  const items = (st.on ? [{ look: st, lines: [l1, l2 || ""] }] : []).concat(label ? [{ look, lines: [labelText(lb, t0.title, t0.artist)] }] : []);
+  return { items, back, stamp: st.on, label };
+}
+const fitIn = (ar, w, h) => { const fw = Math.max(1, Math.min(w, Math.round(h * ar))); return { w: fw, h: Math.round(fw / ar) }; };
+
+// The text preview: a slim bar pinned under the header that drops a full-size, to-scale preview over the settings.
+function TextBar({ d, db, picked }) {
+  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState(0);
+  const ar = SHAPES[d.shape].ar;
+  const area = useRef(null);
+  const panel = useRef(null);
+  const [room, setRoom] = useState({ w: 320, h: 560 });
+  useEffect(() => {
+    const el = area.current;
+    if (!open || !el) return;
+    const measure = () => setRoom({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    if (panel.current) panel.current.focus();
+    const esc = (ev) => { if (ev.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", esc);
+    if (!window.ResizeObserver) return () => window.removeEventListener("keydown", esc);
+    const ro = new ResizeObserver(measure); ro.observe(el);
+    return () => { ro.disconnect(); window.removeEventListener("keydown", esc); };
+  }, [open]);
+  const n = picked.length;
+  const i = n ? Math.min(at, n - 1) : 0;
+  const scene = textScene(db, d, picked[i], i);
+  const thumb = fitIn(ar, 44, 44);
+  // The dialog keeps 16px from the sides, 12px of padding, room under the picture for the clip buttons,
+  // and a strip of the dimmed page below it to tap.
+  const big = fitIn(ar, room.w - 56, room.h - 150);
+  const what = scene.stamp && scene.label ? "Date stamp · Song title" : scene.stamp ? "Date stamp" : scene.label ? "Song title" : "No text on the clips";
+  return (
+    <>
+      <div style={{ padding: "0 20px 10px", flexShrink: 0, position: "relative", zIndex: 3 }}>
+        <button onClick={() => setOpen(!open)} aria-expanded={open} className="hrow gap12" style={{ width: "100%", minHeight: 60, padding: "8px 12px 8px 8px", borderRadius: 14, border: "1px solid " + (open ? "var(--accent)" : "var(--line-strong)"), background: "var(--surface)", color: "var(--fg)", textAlign: "left" }}>
+          <span style={{ width: 44, height: 44, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><TextPreview items={scene.items} w={thumb.w} h={thumb.h} back={scene.back} quiet radius={4} /></span>
+          <span className="stack gap2" style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>Preview text</span>
+            <span className="small muted ellipsis">{SHAPES[d.shape].label} · {what}</span>
+          </span>
+          <span className="hrow gap4" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--accent)" }}>{open ? "Hide" : "Show"}<Icon name="chevD" size={16} stroke={2.4} style={{ transform: open ? "rotate(180deg)" : "none" }} /></span>
+        </button>
+      </div>
+      {open ? (
+        <div ref={area} style={{ position: "absolute", left: 0, right: 0, bottom: 0, top: 70, zIndex: 2 }}>
+          <button aria-label="Close preview" onClick={() => setOpen(false)} style={{ position: "absolute", inset: 0, border: "none", padding: 0, background: "rgba(0,0,0,0.6)" }} />
+          <div ref={panel} tabIndex={-1} role="dialog" aria-label="Text preview" className="stack gap12" style={{ position: "absolute", left: 16, right: 16, top: 0, alignItems: "center", padding: 12, borderRadius: 18, background: "var(--bg-deep)", border: "1px solid var(--line-strong)", boxShadow: "0 18px 50px rgba(0,0,0,0.6)", outline: "none" }}>
+            <TextPreview items={scene.items} w={big.w} h={big.h} back={scene.back} />
+            <div className="hrow between" style={{ width: Math.max(big.w, 220) }}>
+              <button className="iconbtn sq" aria-label="Previous clip" disabled={i <= 0} onClick={() => setAt(i - 1)} style={{ opacity: i <= 0 ? 0.35 : 1 }}><Icon name="chevL" size={18} /></button>
+              <span className="small muted">{n ? "Clip " + (i + 1) + " of " + n + " · " + monthDay(picked[i].date) : "Sample clip"}</span>
+              <button className="iconbtn sq" aria-label="Next clip" disabled={i >= n - 1} onClick={() => setAt(i + 1)} style={{ opacity: i >= n - 1 ? 0.35 : 1 }}><Icon name="chevR" size={18} /></button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+// The date stamp and song title settings, with a tab for each.
+function TextCard({ d, set, db, me }) {
+  const { act, toast } = useApp();
+  const [tab, setTab] = useState("stamp");
+  const [fontFor, setFontFor] = useState(null);
+  const st = cleanStamp(d.stamp), lb = cleanLabel(d.label);
+  const putStamp = (o) => set({ stamp: Object.assign({}, st, o) });
+  const putLabel = (o) => set({ label: Object.assign({}, lb, o) });
+  const pf = S.prefs(db, me.id);
+  const isDefault = JSON.stringify(cleanStamp(pf.stamp)) === JSON.stringify(st) && JSON.stringify(cleanLabel(pf.label)) === JSON.stringify(lb);
+  const t0 = d.tracks.length ? S.track(db, d.tracks[0].trackId) : null;
+  const music = !!t0 && d.audio !== "clips";
   return (
     <div className="card stack gap16">
-      <div ref={mark} aria-hidden="true" style={{ height: 0, marginBottom: -16 }} />
-      {/* Stays in view just below the header while the controls scroll, but never leaves this card. */}
-      <div ref={wrap} style={{ position: "sticky", top: stickAt, zIndex: 2, display: "flex", justifyContent: "center", margin: "0 -16px", padding: "10px 16px 12px", background: "var(--surface)", borderBottom: "1px solid var(--line-soft)" }}>
-        <TextPreview items={items} w={pv.w} h={pv.h} back={back} />
-      </div>
       <Opts value={tab} onChange={setTab} options={[{ id: "stamp", label: "Date stamp" }, { id: "label", label: "Song title" }]} />
       {tab === "stamp" ? (
         <div className="stack gap16">
@@ -273,7 +286,7 @@ export function MashStep1({ params }) {
 
 export function MashStep2() {
   const { db, nav, me, mashDraft, setMashDraft, setDraft } = useApp();
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(null);
   const [showMissed, setShowMissed] = useState(8);
   if (!mashDraft) return <Screen><TopBar title="Review clips" /></Screen>;
   const d = mashDraft;
@@ -283,6 +296,8 @@ export function MashStep2() {
   const multi = Object.keys(byDay).filter((k) => byDay[k].length > 1).sort();
   const singles = Object.keys(byDay).filter((k) => byDay[k].length === 1).sort();
   const missed = x && x.cat.daily && !d.memberId ? S.missedDays(db, d.projectId, r.from, r.to) : [];
+  // The rest start open when there's nothing else to do here; with missed days to fill, they start closed.
+  const open = showAll === null ? !missed.length : showAll;
   const toggle = (id) => { const ex = Object.assign({}, d.excluded); if (ex[id]) delete ex[id]; else ex[id] = true; set({ excluded: ex }); };
   const multiClips = multi.reduce((a, k) => a + byDay[k].length, 0);
   const multiPicked = multi.reduce((a, k) => a + byDay[k].filter((e) => !d.excluded[e.id]).length, 0);
@@ -313,8 +328,8 @@ export function MashStep2() {
           </div>
         ) : <span className="small faint">Every day in this range has one clip, so there's nothing to choose between.</span>}
         <div className="stack gap10">
-          <button onClick={() => setShowAll(!showAll)} className="hrow between" style={{ background: "none", border: "none", padding: 0, color: "var(--fg)" }}><span className="sec">All other clips · {singles.length}</span><span className="link">{showAll ? "Hide" : "Show"}</span></button>
-          {showAll ? <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8 }}>{singles.map((k) => <div key={k} className="stack gap4"><Tile e={byDay[k][0]} w={74} /><span className="tiny faint">{monthDay(k)}</span></div>)}</div> : null}
+          <button onClick={() => setShowAll(!open)} className="hrow between" style={{ background: "none", border: "none", padding: 0, color: "var(--fg)" }}><span className="sec">All other clips · {singles.length}</span><span className="link">{open ? "Hide" : "Show"}</span></button>
+          {open ? <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 8 }}>{singles.map((k) => <div key={k} className="stack gap4"><Tile e={byDay[k][0]} w={74} /><span className="tiny faint">{monthDay(k)}</span></div>)}</div> : null}
         </div>
         {x && x.cat.daily && !d.memberId ? (
           <div className="stack gap10">
@@ -438,7 +453,10 @@ export function MashStep3() {
     <Screen>
       <TopBar title="Style" sub={"Step 3 of 3 · " + picked.length + " clips"} backLabel="Back to step 2" />
       <Steps n={3} of={3} />
-      <div className="scroll pad stack gap24" style={{ paddingTop: 22 }}>
+      {/* The preview bar stays pinned with the header and step lines; its dialog covers the settings below it. */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" }}>
+      <TextBar d={d} db={db} picked={picked} />
+      <div className="scroll pad stack gap24" style={{ paddingTop: 12 }}>
         <div className="field">
           <div className="hrow between"><label className="sec" htmlFor="mash-title">Title</label>{d.title !== null && d.title !== undefined && d.title !== defaultTitle(db, d) ? <button className="link" style={{ color: "var(--muted)", fontSize: 11.5 }} onClick={() => set({ title: null })}>Reset to default</button> : null}</div>
           <input id="mash-title" className="input" maxLength={60} value={title} onChange={(e) => set({ title: e.target.value })} style={{ fontWeight: 600 }} />
@@ -472,7 +490,7 @@ export function MashStep3() {
             <div style={{ paddingLeft: 32 }}><Opts value={d.clipMode === "cap" ? d.cap : null} onChange={(v) => set({ clipMode: "cap", cap: v })} options={[0.5, 1, 2, 3].map((c) => ({ id: c, label: c + "s" }))} /></div>
           </div>
         </Section>
-        <Section title="Text" right="Preview is to scale"><TextCard d={d} set={set} sample={picked.find((e) => e.note) || picked[0]} db={db} me={me} /></Section>
+        <Section title="Text"><TextCard d={d} set={set} db={db} me={me} /></Section>
         {x && x.shared ? <div className="card"><ToggleRow title="Share with project" sub={"Everyone in " + x.p.name + " can watch it. Off keeps it private to you."} on={d.shared} onChange={(v) => set({ shared: v })} /></div> : null}
 
         <div className="stack gap12">
@@ -543,6 +561,7 @@ export function MashStep3() {
       <div className="stack gap10" style={{ padding: "12px 20px calc(22px + env(safe-area-inset-bottom, 0px))", flexShrink: 0, borderTop: "1px solid #211F1D" }}>
         <div className="hrow between small muted"><span>Estimated length <strong className="num" style={{ color: "var(--fg)" }}>{fmtDur(secs)}</strong></span><span>{resOf(db, d.shape)} · {QUALITY[d.quality].label}</span></div>
         <button className="btn" disabled={rendering || !picked.length} onClick={render}><Icon name="mash" size={16} />{rendering ? "Starting…" : d.remashOf ? "Render re-mash" : "Render mash"}</button>
+      </div>
       </div>
       <MusicPicker open={picker} onClose={() => setPicker(false)} list={d.tracks.map((t) => t.trackId)} bpm={t0 ? t0.bpm : 96} onAdd={(id) => { const t = S.track(db, id); set({ tracks: d.tracks.concat([{ trackId: id, start: 0, fadeIn: d.tracks.length ? 0 : 1, fadeOut: 2 }]) }); toast(t.title + " added as track " + (d.tracks.length + 1)); }} />
     </Screen>

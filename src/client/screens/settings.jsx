@@ -90,7 +90,7 @@ function People() {
               </button>
               {open ? (
                 <div className="stack gap12" style={{ padding: "0 12px 14px" }}>
-                  <div className="stack gap6"><span className="sec">Storage limit</span><Opts value={u.quota || null} onChange={(v) => setUser(u.id, { quota: v }, "Storage limit saved")} options={[{ id: 1, label: "1 GB" }, { id: 5, label: "5 GB" }, { id: 10, label: "10 GB" }, { id: 25, label: "25 GB" }, { id: null, label: "Unlimited" }]} /></div>
+                  <div className="stack gap6"><span className="sec">Storage limit</span><Opts value={u.quota || null} onChange={(v) => setUser(u.id, { quota: v }, "Storage limit saved")} options={[{ id: 1, label: "1 GB" }, { id: 5, label: "5 GB" }, { id: 10, label: "10 GB" }, { id: 25, label: "25 GB" }, { id: null, label: "∞", aria: "Unlimited" }]} /></div>
                   {last ? <span className="small muted">{u.id === me.id ? "You're" : u.name + " is"} the only admin, so this account can't be demoted, disabled or deleted.</span> : null}
                   <div className="grid2" style={{ gap: 6 }}>
                     {!last ? <button className="chipbtn" onClick={() => setUser(u.id, { role: u.role === "ADMIN" ? "USER" : "ADMIN" }, u.role === "ADMIN" ? u.name + " is no longer an admin" : u.name + " is now an admin")}>{u.role === "ADMIN" ? "Remove admin" : "Make admin"}</button> : null}
@@ -246,6 +246,14 @@ function AdminSettings({ initialOpen }) {
   const removals = db.removalRequests.filter((r) => r.status === "open" && S.track(db, r.trackId));
   const tot = admin.totals || { clips: 0, mashes: 0, music: 0 };
   const appUsed = tot.clips + tot.mashes + tot.music;
+  const free = typeof admin.mediaFree === "number" ? admin.mediaFree : null;
+  // A rough guide to how many more people the free space holds if each fills the default limit.
+  const roomFor = (q) => {
+    if (free == null) return onShare ? null : "Free space depends on your S3 storage, so Glimpse can't estimate how many people fit.";
+    if (!q) return "With no limit, everyone shares the " + gb(free) + " left.";
+    const n = Math.floor(free / (q * 1e9));
+    return n < 1 ? "Less than " + q + " GB is free, so a new person couldn't fill their limit." : "Room for about " + n.toLocaleString() + " more " + (n === 1 ? "person" : "people") + " at " + q + " GB each, with " + gb(free) + " free now.";
+  };
   const queue = (admin.queue || []).slice().sort((a, b) => a.createdAt - b.createdAt);
   const users = db.users.filter((u) => !u.deleted);
   const nAdmins = users.filter((u) => u.role === "ADMIN").length;
@@ -255,15 +263,16 @@ function AdminSettings({ initialOpen }) {
       <Acc id="signin" open={open} setOpen={setOpen} icon="key" title="Sign-in" sub={srv.sso.on ? "SSO · " + (srv.sso.passwordLogin ? "passwords too" : "SSO only") : "Passwords only"}><SignIn /></Acc>
       <Acc id="storage" open={open} setOpen={setOpen} icon="storage" title="Storage" sub={"App uses " + gb(appUsed) + (admin.dataFree ? " · " + admin.dataFree + " free for backups" : "")}>
         <div className="stack gap8">
-          <UsageBar total={Math.max(appUsed, 1)} parts={[{ v: tot.clips, c: "var(--accent)" }, { v: tot.mashes, c: "#6FA8DC" }, { v: tot.music, c: "#9B87D6" }]} />
+          <UsageBar total={Math.max(appUsed + (free || 0), 1)} parts={[{ v: tot.clips, c: "var(--accent)" }, { v: tot.mashes, c: "#6FA8DC" }, { v: tot.music, c: "#9B87D6" }]} />
           <div className="hrow wrap" style={{ gap: "6px 12px", fontSize: 11, color: "#BDB7AD" }}>
             <span className="hrow gap4"><span className="dot" style={{ background: "var(--accent)", borderRadius: 2 }} />Clips {gb(tot.clips)}</span>
             <span className="hrow gap4"><span className="dot" style={{ background: "#6FA8DC", borderRadius: 2 }} />Mashes {gb(tot.mashes)}</span>
             <span className="hrow gap4"><span className="dot" style={{ background: "#9B87D6", borderRadius: 2 }} />Music {gb(tot.music)}</span>
+            {free != null ? <span className="hrow gap4"><span className="dot" style={{ background: "var(--line-soft)", border: "1px solid var(--line-strong)", borderRadius: 2 }} />Free {gb(free)}</span> : null}
           </div>
           <span className="small faint" style={{ lineHeight: 1.4 }}>Clips include the original and its playback copy. {onShare ? "Files are saved in the folder mapped to " + srv.storage.where + ", so free space is whatever that share has left." : "Free space depends on your S3 storage; check it there."}</span>
         </div>
-        <div className="stack gap6"><span className="sec">Default limit for new users</span><Opts value={srv.defaultQuota} onChange={(v) => setSrv({ defaultQuota: v })} options={[{ id: 1, label: "1 GB" }, { id: 5, label: "5 GB" }, { id: 10, label: "10 GB" }, { id: 25, label: "25 GB" }, { id: 0, label: "None" }]} /></div>
+        <div className="stack gap6"><span className="sec">Default limit for new users</span><Opts value={srv.defaultQuota} onChange={(v) => setSrv({ defaultQuota: v })} options={[{ id: 1, label: "1 GB" }, { id: 5, label: "5 GB" }, { id: 10, label: "10 GB" }, { id: 25, label: "25 GB" }, { id: 0, label: "∞", aria: "Unlimited" }]} />{roomFor(srv.defaultQuota) ? <span className="small muted" style={{ lineHeight: 1.4 }}>{roomFor(srv.defaultQuota)}</span> : null}</div>
       </Acc>
       <Acc id="capture" open={open} setOpen={setOpen} icon="camera" title="Capture" sub={clip.on ? "Clips up to " + (clip.max > 0 ? fmtLimit(clip.max) : "any length") : "Clips up to 10 seconds"}>
         <ToggleRow title="Allow longer clips" sub={clip.on ? "Everyone can keep a longer moment from each video" : "Off: each glimpse keeps up to 10 seconds"} on={clip.on} onChange={(v) => setSrv({ clipLimit: Object.assign({}, clip, { on: v }) })} />

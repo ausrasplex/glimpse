@@ -166,10 +166,9 @@ textarea.input { resize: none; line-height: 1.45; }
 .plus { width: 34px; height: 34px; border-radius: 50%; background: #232220; display: flex; align-items: center; justify-content: center; }
 
 /* Tab bar */
-.tabbar { position: relative; z-index: 5; flex-shrink: 0; padding: 10px 24px calc(18px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #211F1D; background: var(--bg); }
+.tabbar { position: relative; z-index: 5; flex-shrink: 0; padding: 10px 24px calc(18px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; justify-content: space-around; border-top: 1px solid #211F1D; background: var(--bg); }
 .tab { background: none; border: none; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--faint); font-size: 10px; font-weight: 500; min-width: 44px; }
 .tab.on { color: var(--accent); font-weight: 600; }
-.fab { margin-top: -22px; width: 54px; height: 54px; border-radius: 50%; background: var(--accent); border: none; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px rgba(0,0,0,0.4); color: var(--accent-ink); }
 
 /* Sheets, dialogs */
 .overlay { position: absolute; inset: 0; z-index: 40; display: flex; flex-direction: column; justify-content: flex-end; }
@@ -203,7 +202,8 @@ textarea.input { resize: none; line-height: 1.45; }
 .day .n { position: absolute; top: 5px; left: 6px; font-size: 11px; font-weight: 600; color: var(--muted); text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
 .day.has .n { color: var(--fg); }
 .day.out .n { color: #4A4742; }
-.day.today { outline: 2px solid var(--accent); outline-offset: 1px; }
+.day.today { outline: 2px solid var(--fg); outline-offset: 1px; }
+.day.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
 .day .count { position: absolute; bottom: 4px; right: 4px; width: 15px; height: 15px; border-radius: 50%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: var(--fg); }
 .day .mooddot { position: absolute; bottom: 5px; left: 6px; width: 6px; height: 6px; border-radius: 50%; }
 

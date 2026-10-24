@@ -33,13 +33,18 @@ export function Notifications({ onClose }) {
   const earlier = list.filter((n) => Date.now() - n.at >= DAY).slice(0, 12);
   const pending = S.dailyPending(db, me.id);
   const unread = list.filter((n) => !n.read).length + (pending ? 1 : 0);
-  const capture = () => { onClose(); setDraft(null); nav.go("capture"); };
+  // Glimpses go into a project: straight into the only daily project, otherwise pick one from the list.
+  const capture = () => {
+    onClose();
+    const daily = S.myProjects(db, me.id).filter((x) => x.cat.daily);
+    if (daily.length === 1) { setDraft({ presetProjectId: daily[0].p.id }); nav.go("capture"); } else { setDraft(null); nav.go("projects"); }
+  };
   const markRead = (id) => { const x = list.find((n) => n.id === id); if (x && !x.read) act("notifRead", { id }).catch(() => {}); };
   const follow = (l) => {
     if (!l) return;
     onClose();
     if (l.route === "mash1") setMashDraft(null);
-    if (l.route === "capture") { nav.go("capture"); return; }
+    if (l.route === "capture") { capture(); return; }
     nav.go(l.route, l.params || {});
   };
   const respondInvite = async (n, accept) => {
@@ -250,7 +255,7 @@ export function Home() {
         })}
         <div className="hrow between" style={{ marginTop: invites.length ? 8 : 6 }}>
           <span className="h2">Your Projects</span>
-          {projects.length ? <button className="hrow gap2 muted" onClick={() => nav.go("projects")} style={{ background: "none", border: "none", fontSize: 12.5 }}>See all<Icon name="chevR" size={13} /></button> : null}
+          {projects.length ? <button className="hrow gap2 muted" onClick={() => nav.go("projects")} style={{ background: "none", border: "none", fontSize: 12.5 }}>Manage<Icon name="chevR" size={13} /></button> : null}
         </div>
         <ProjectRow projects={projects} />
 
@@ -258,7 +263,7 @@ export function Home() {
         {!projects.length ? (
           <div className="stack gap10" style={{ marginTop: 22 }}>
             <span className="sec">How it works</span>
-            {[["Make a project", "A daily diary, a trip, a pet, a goal. Every glimpse lives in a project."], ["Capture a moment", "Film or pick a clip, then choose the second (or few) you want to keep."], ["Mash it together", "Turn a month or a year into one short film, with music if you like."]].map((t, i) => (
+            {[["Make a project", "A daily diary, a trip, a pet, a goal. Every glimpse lives in a project."], ["Capture a moment", "Open a project, film or pick a clip, then keep the second (or few) you want."], ["Mash it together", "Turn a month or a year into one short film, with music if you like."]].map((t, i) => (
               <div key={i} className="hrow gap12" style={{ alignItems: "flex-start", padding: "12px 14px", borderRadius: 14, background: "var(--surface)", border: "1px solid var(--line)" }}>
                 <span style={{ width: 28, height: 28, flexShrink: 0, borderRadius: "50%", background: "var(--raised)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: "var(--accent)" }}>{i + 1}</span>
                 <span className="stack gap2"><span style={{ fontSize: 14, fontWeight: 700 }}>{t[0]}</span><span className="muted" style={{ fontSize: 12.5, lineHeight: 1.4 }}>{t[1]}</span></span>

@@ -5,7 +5,7 @@ import { ensureStorage } from "../server/storage";
 import { getSettings } from "../server/settings";
 import { db, schema } from "../server/db";
 import { eq, or } from "drizzle-orm";
-import { processMedia, importImmich } from "./media";
+import { processMedia, importImmich, motionVideo } from "./media";
 import { processTrack, backfillPeaks } from "./music";
 import { renderMash } from "./mash";
 import { runReminders, runBackup, cleanup, deleteObjects } from "./system";
@@ -22,6 +22,7 @@ async function main() {
 
   const media = new Worker(Q.media, async (job: Job) => {
     if (job.name === "immich") return importImmich(job.data.mediaId, job.data.userId, job.data.assetId);
+    if (job.name === "motion") return motionVideo(job.data.mediaId, job.data.fromId);
     return processMedia(job.data.mediaId);
   }, { connection: conn, concurrency: 2, lockDuration: 10 * 60e3 });
 

@@ -105,6 +105,8 @@ export const media = pgTable("media", {
   motion: text("motion"),
   takenAt: ts("taken_at"),
   takenDay: text("taken_day"),
+  motionVideo: text("motion_video"), // motion photos: "embedded:<offset>" or "immich:<asset id>"
+  motionDuration: real("motion_duration"),
   immichAssetId: text("immich_asset_id"),
   error: text("error"),
   progress: integer("progress").notNull().default(0),

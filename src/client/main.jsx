@@ -16,7 +16,7 @@ import * as Imm from "./screens/immich.jsx";
 const ROUTES = {
   login: Auth.Login, reset: Auth.ResetPassword, signup: Auth.Signup, setup: Auth.SetupWizard,
   home: Home.Home,
-  capture: Capture.Trim, immich: Imm.ImmichPicker, captureProjects: Capture.PickProjects, captureNote: Capture.NoteMood,
+  capture: Capture.Trim, immich: Imm.ImmichPicker, captureNote: Capture.NoteMood,
   calendar: Cal.Calendar, grid: Cal.Grid, entry: Cal.EntryDetail,
   projects: Proj.Projects, project: Proj.ProjectPage, projectEdit: Proj.ProjectEdit, categories: Proj.Categories, members: Proj.Members,
   mash: Mash.MashLibrary, mash1: Mash.MashStep1, mash2: Mash.MashStep2, mash3: Mash.MashStep3, player: Mash.MashPlayer, trackSection: Mash.TrackSection,

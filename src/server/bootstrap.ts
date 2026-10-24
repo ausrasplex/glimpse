@@ -18,7 +18,8 @@ export function mediaOut(m: typeof schema.media.$inferSelect, mine: boolean) {
     duration: m.duration, clipStart: m.clipStart, clipEnd: m.clipEnd, orient: m.orient, motion: m.motion,
     converted: m.converted ? m.codec || "original" : null, immichId: m.immichAssetId,
     width: m.width, height: m.height, size: mine ? m.size + m.derivedSize : 0, createdAt: ms(m.createdAt),
-    takenDay: m.takenDay ?? null, takenAt: m.takenAt ? ms(m.takenAt) : null
+    takenDay: m.takenDay ?? null, takenAt: m.takenAt ? ms(m.takenAt) : null,
+    motionVideo: m.kind === "photo" && m.motionVideo ? m.motionDuration || 0 : null
   };
 }
 
@@ -163,9 +164,12 @@ async function adminData() {
   try { const hb = await redis().get("glimpse:worker"); const w = hb ? JSON.parse(hb) : null; if (w && Date.now() - w.at < 60e3) worker = { ok: true, ffmpeg: w.ffmpeg }; } catch { /* redis down */ }
   let dataFree: string | null = null;
   try { const st = await statfs(env.dataDir); const b = st.bavail * st.bsize; dataFree = b >= 1e12 ? (b / 1e12).toFixed(1) + " TB" : Math.round(b / 1e9) + " GB"; } catch { dataFree = null; }
+  // Free space where media is kept, in bytes; null on S3, where it can't be measured.
+  let mediaFree: number | null = null;
+  try { const { storageInfo } = await import("./storage"); mediaFree = (await storageInfo()).free; } catch { mediaFree = null; }
   const [imm] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.users).where(sql`${schema.users.immichKeyEnc} is not null`);
   return {
-    usage, totals, worker, dataFree, immichConnected: imm?.n ?? 0,
+    usage, totals, worker, dataFree, mediaFree, immichConnected: imm?.n ?? 0,
     queue: q.map((x) => ({ ...x, createdAt: ms(x.createdAt), ownerName: x.ownerName.split(" ")[0] })),
     sharedProjects: Object.fromEntries((shared.rows as { uid: string; n: number }[]).map((r) => [r.uid, r.n]))
   };

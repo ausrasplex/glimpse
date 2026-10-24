@@ -208,6 +208,7 @@ function SourcePicker({ onFile, onPhoto }) {
 
 // Filmstrip with a draggable window: grab either end to trim, the middle to slide it.
 const MIN_LEN = 0.5;
+const LENGTHS = [1, 1.5, 2, 2.5];
 function TrimStrip({ frames, grad, n, dur, start, len, maxLen, onChange }) {
   const MAX_LEN = maxLen || 10;
   const ref = useRef(null);
@@ -328,14 +329,26 @@ export function Trim({ params }) {
     else setDraft(Object.assign({}, base, { source: "server", liveId: key, kind: "photo", fileName: f.name, size: f.size }, up));
   };
   const cancel = () => { if (!editing) abandon(d); setDraft(null); nav.back(); };
+  // Motion photos: swap the still for its video part (a new video the server cuts out), keeping the still to switch back to.
+  const useMotion = async () => {
+    setBusy(true);
+    try {
+      const r = await act("useMotionVideo", { mediaId: media.id });
+      setDraft({ date: d.date, presetProjectId: d.presetProjectId, projectIds: d.projectIds, returnTo: d.returnTo, uploadId: d.uploadId, filmedHint: d.filmedHint, dateChecked: d.dateChecked, source: "server", kind: "video", mediaId: r.mediaId, fileName: d.fileName, still: d });
+      refresh();
+    } catch (e) { /* toast shown */ } finally { setBusy(false); }
+  };
+  const useStill = () => setDraft(Object.assign({}, d.still, { date: d.date, dateChecked: d.dateChecked }));
 
   if (!d.source && editing) return <Screen />;
+  // Glimpses are added from a project, so a new one without a project goes to the project list.
+  if (!editing && !d.presetProjectId && !(d.projectIds && d.projectIds.length)) return <Redirect to="projects" />;
   if (waiting) {
     return (
       <Screen>
-        <TopBar title={d.kind === "photo" ? "Photo glimpse" : "Pick the moment"} sub="New entry · Step 1 of 3" icon="close" backLabel="Cancel new entry" onBack={cancel} />
-        <Steps n={1} of={3} />
-        <div className="scroll"><Preparing draft={d} media={media} />{!editing ? <FilmedBanner d={d} setDraft={setDraft} style={{ margin: "0 22px 22px" }} /> : null}</div>
+        <TopBar title={d.kind === "photo" ? "Photo glimpse" : "Pick the moment"} sub="New entry · Step 1 of 2" icon="close" backLabel="Cancel new entry" onBack={cancel} />
+        <Steps n={1} of={2} />
+        <div className="scroll"><Preparing draft={d} media={media} />{!editing ? <FilmedBanner d={d} setDraft={setDraft} style={{ margin: "0 22px 22px" }} /> : null}{d.still ? <div style={{ margin: "0 22px 22px" }}><button className="btn outline" onClick={useStill}>Use the still photo instead</button></div> : null}</div>
         {media && media.status === "FAILED" || d.uploadErr ? <div style={{ padding: "12px 20px calc(22px + env(safe-area-inset-bottom, 0px))" }}><button className="btn outline" onClick={() => { abandon(d); setDraft({ date: d.date, presetProjectId: d.presetProjectId, returnTo: d.returnTo }); }}>Choose something else</button></div> : null}
       </Screen>
     );
@@ -343,8 +356,8 @@ export function Trim({ params }) {
   if (!d.source) {
     return (
       <Screen>
-        <TopBar title="Pick the moment" sub="New entry · Step 1 of 3" icon="close" backLabel="Cancel new entry" onBack={cancel} />
-        <Steps n={1} of={3} />
+        <TopBar title="Pick the moment" sub="New entry · Step 1 of 2" icon="close" backLabel="Cancel new entry" onBack={cancel} />
+        <Steps n={1} of={2} />
         <div className="scroll"><SourcePicker onFile={onFile} onPhoto={onPhoto} /></div>
       </Screen>
     );
@@ -378,14 +391,15 @@ export function Trim({ params }) {
     }
     let thumb = d.thumb || (media && media.thumb) || null;
     if (d.source === "file" && live.video[d.liveId]) { const f = await grabFrames(live.video[d.liveId], [start + 0.05], 180); thumb = f[0] || thumb; }
-    setDraft(Object.assign({}, d, { start: +start.toFixed(1), len: +len.toFixed(1), thumb }));
-    nav.go("captureProjects");
+    // A glimpse goes into the project it was started from.
+    setDraft(Object.assign({}, d, { start: +start.toFixed(1), len: +len.toFixed(1), thumb, projectIds: d.projectIds || [d.presetProjectId], date: d.date || todayKey() }));
+    nav.go("captureNote");
   };
 
   return (
     <Screen>
-      <TopBar title={editing ? (isPhoto ? "Photo glimpse" : "Adjust trim") : isPhoto ? "Photo glimpse" : "Pick the moment"} sub={editing ? S.project(db, editing.projectId).name + " · " + relDay(editing.date) : "New entry · Step 1 of 3"} icon={editing ? "back" : "close"} backLabel={editing ? "Back" : "Cancel new entry"} onBack={cancel} />
-      {!editing ? <Steps n={1} of={3} /> : null}
+      <TopBar title={editing ? (isPhoto ? "Photo glimpse" : "Adjust trim") : isPhoto ? "Photo glimpse" : "Pick the moment"} sub={editing ? S.project(db, editing.projectId).name + " · " + relDay(editing.date) : "New entry · Step 1 of 2"} icon={editing ? "back" : "close"} backLabel={editing ? "Back" : "Cancel new entry"} onBack={cancel} />
+      {!editing ? <Steps n={1} of={2} /> : null}
       <div className="scroll">
         <div style={{ display: "flex", justifyContent: "center", padding: "20px 0 0" }}>
           <ClipView m={m} start={start} end={end} playing={playing} loop style={{ width: ORIENT_BOX[d.orient || "portrait"].w, height: ORIENT_BOX[d.orient || "portrait"].h, maxWidth: "calc(100vw - 40px)", borderRadius: 18 }}>
@@ -395,19 +409,28 @@ export function Trim({ params }) {
             <span className="hrow between num" style={{ position: "absolute", left: 12, right: 12, bottom: 12, fontSize: 12, fontWeight: 700 }}><span>{isPhoto ? "" : fmtSec(start)}</span><span style={{ color: "var(--accent)" }}>{len.toFixed(1)}s</span></span>
           </ClipView>
         </div>
-        {!editing && (upPct !== null && upPct < 1 || d.uploadErr || d.immichId || (media && media.converted)) ? (
+        {!editing && (upPct !== null && upPct < 1 || d.uploadErr || d.immichId) ? (
           <div className="hrow wrap gap6" style={{ justifyContent: "center", marginTop: 12, padding: "0 20px" }}>
             {upPct !== null && upPct < 1 && !d.uploadErr ? <span className="tag" style={{ background: "var(--surface)", border: "1px solid var(--line)", color: "#BDB7AD" }}>{d.uploadWaiting ? "Upload paused · waiting for a connection" : "Uploading · " + Math.round(upPct * 100) + "% · keep Glimpse open"}</span> : null}
             {d.uploadErr ? <span className="tag" style={{ background: "rgba(224,120,110,0.12)", border: "1px solid rgba(224,120,110,0.4)", color: "#F0A49C" }}>Upload failed · {d.uploadErr}</span> : null}
             {d.immichId ? <span className="tag" style={{ background: "var(--surface)", border: "1px solid var(--line)", color: "#BDB7AD" }}>From Immich{d.date ? " · " + relDay(d.date) : ""}</span> : null}
-            {media && media.converted && !isPhoto ? <span className="tag" style={{ background: "var(--surface)", border: "1px solid var(--line)", color: "#BDB7AD" }}>Playback copy · {media.converted} original kept for mashes</span> : null}
           </div>
         ) : null}
         {!editing && filmedOf(db, d) ? <span className="small faint" style={{ display: "block", textAlign: "center", marginTop: 10 }}>Filmed {dayLabel(filmedOf(db, d))}</span> : null}
         {!editing ? <FilmedBanner d={d} setDraft={setDraft} style={{ margin: "14px 20px 0" }} /> : null}
         {isPhoto ? (
           <div className="pad stack gap20" style={{ paddingTop: 22 }}>
-            <div className="stack gap8"><span className="sec">Length</span><Opts value={+len.toFixed(1)} onChange={(l) => set({ len: l, start: 0 })} options={[1, 2, 3, 5].map((l) => ({ id: l, label: l + "s" }))} /></div>
+            {!editing && media && media.motionVideo != null ? (
+              <div className="hrow gap12" style={{ padding: "12px 14px", borderRadius: 14, background: "var(--accent-soft)", border: "1px solid var(--accent)" }}>
+                <Icon name="film" size={18} color="var(--accent)" />
+                <span className="stack gap2" style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 700 }}>This is a motion photo</span>
+                  <span className="small muted" style={{ lineHeight: 1.4 }}>{media.motionVideo ? media.motionVideo.toFixed(1) + "s of video was" : "A short video was"} saved with it. Use that instead of the still?</span>
+                </span>
+                <button className="chipbtn" disabled={busy} onClick={useMotion}>Use the video</button>
+              </div>
+            ) : null}
+            <div className="stack gap8"><span className="sec">Length</span><Opts value={+len.toFixed(1)} onChange={(l) => set({ len: l, start: 0 })} options={LENGTHS.map((l) => ({ id: l, label: l + "s" }))} /></div>
             <div className="stack gap8"><span className="sec">Movement</span><Opts value={d.motion || "in"} onChange={(v) => set({ motion: v })} options={MOTIONS} /></div>
             <span className="small faint" style={{ lineHeight: 1.45 }}>No video that day? A photo plays as a short clip with gentle movement, so the day still counts toward your streak. In a beat-synced mash, photos stretch to land on the beat.</span>
           </div>
@@ -417,9 +440,10 @@ export function Trim({ params }) {
             <TrimStrip frames={frames} grad={d.grad} n={n} dur={dur} start={start} len={len} maxLen={clipMaxOf(db.server.clipLimit)} onChange={(o) => setDraft((cur) => Object.assign({}, cur, o))} />
             <div className="stack gap8" style={{ marginTop: 16 }}>
               <div className="hrow between" style={{ alignItems: "baseline" }}><span className="sec">Quick length</span><span className="small faint">Keeps your start, moves the end</span></div>
-              <Opts value={[1, 2, 3, 5].indexOf(+len.toFixed(1)) >= 0 ? +len.toFixed(1) : null} onChange={(l) => set({ len: Math.min(l, dur), start: Math.min(start, Math.max(0, dur - l)) })} options={[1, 2, 3, 5].map((l) => ({ id: l, label: l + "s", disabled: l > dur }))} />
+              <Opts value={LENGTHS.indexOf(+len.toFixed(1)) >= 0 ? +len.toFixed(1) : null} onChange={(l) => set({ len: Math.min(l, dur), start: Math.min(start, Math.max(0, dur - l)) })} options={LENGTHS.map((l) => ({ id: l, label: l + "s", disabled: l > dur }))} />
             </div>
             <span className="small faint" style={{ display: "block", marginTop: 10, lineHeight: 1.4 }}>Drag the start handle to your moment, tap a length, then fine-tune either end if you like. Drag the middle to move the whole selection.</span>
+            {d.still && !editing ? <button className="btn outline sm" style={{ marginTop: 14 }} onClick={useStill}>Use the still photo instead</button> : null}
           </div>
         )}
         <div className="pad stack gap10" style={{ paddingTop: 20 }}>
@@ -435,74 +459,13 @@ export function Trim({ params }) {
         <div style={{ height: 18 }} />
       </div>
       <div style={{ padding: "12px 20px calc(22px + env(safe-area-inset-bottom, 0px))", flexShrink: 0 }}>
-        <button className="btn" disabled={busy} onClick={next}>{editing ? "Save" : "Next: choose projects"}</button>
+        <button className="btn" disabled={busy} onClick={next}>{editing ? "Save" : "Next: note & mood"}</button>
         {!editing ? <button className="btn danger-ghost" style={{ marginTop: 4, padding: 10, fontSize: 13 }} onClick={() => { abandon(d); setDraft({ date: d.date, presetProjectId: d.presetProjectId, returnTo: d.returnTo }); }}>{isPhoto ? "Choose something else" : "Choose a different video"}</button> : null}
       </div>
     </Screen>
   );
 }
 
-export function PickProjects() {
-  const { db, nav, draft, setDraft, me } = useApp();
-  const d = draft || {};
-  const [dateOpen, setDateOpen] = useState(false);
-  const projects = S.sortProjects(S.myProjects(db, me.id));
-  // Nothing chosen yet: start from the preset project, or the only project there is.
-  const picked = d.projectIds || (d.presetProjectId ? [d.presetProjectId] : projects.length === 1 ? [projects[0].p.id] : []);
-  const set = (o) => setDraft(Object.assign({}, d, o));
-  const toggle = (id) => set({ projectIds: picked.indexOf(id) >= 0 ? picked.filter((x) => x !== id) : picked.concat([id]) });
-  if (!d.source) return <Redirect to="capture" />;
-  const date = d.date || todayKey();
-  const m = { grad: d.grad, thumb: d.thumb };
-  return (
-    <Screen>
-      <TopBar title="Add to projects" sub="New entry · Step 2 of 3" backLabel="Back to trim" onBack={() => { set({ projectIds: picked }); nav.back(); }} />
-      <Steps n={2} of={3} />
-      <div className="scroll pad">
-        <div className="hrow gap14" style={{ marginTop: 20, padding: 12, borderRadius: 16, background: "var(--surface)", border: "1px solid var(--line)" }}>
-          <Thumb m={m} style={{ width: 58, height: 80 }}><span style={{ position: "absolute", left: 5, bottom: 5, padding: "1px 5px", borderRadius: 5, background: "rgba(0,0,0,0.5)", fontSize: 9.5, fontWeight: 700 }}>{d.len.toFixed(1)}s</span></Thumb>
-          <div className="stack gap4" style={{ flex: 1, minWidth: 0 }}>
-            <span className="small muted">Entry date</span>
-            <span style={{ fontSize: 15, fontWeight: 700 }}>{date === todayKey() ? "Today · " + dayLabel(date) : relDay(date)}</span>
-            <span className="small faint num">{d.kind === "photo" ? "Photo · " + d.len + "s · " + (MOTIONS.find((x) => x.id === d.motion) || MOTIONS[0]).label.toLowerCase() : fmtSec(d.start) + " – " + fmtSec(d.start + d.len) + " of a " + Math.round(d.duration) + "s clip"}</span>
-          </div>
-          <button className="chipbtn" onClick={() => setDateOpen(true)}>Change</button>
-        </div>
-        <FilmedBanner d={d} setDraft={setDraft} style={{ marginTop: 14 }} />
-        <div className="hrow between" style={{ alignItems: "baseline", marginTop: 22, marginBottom: 10 }}>
-          <span className="sec">Pick one or more</span>
-          <span className="small" style={{ color: picked.length ? "var(--accent)" : "var(--faint)", fontWeight: 600 }}>{picked.length ? picked.length + " selected" : "None selected"}</span>
-        </div>
-        <div className="grid2">
-          {projects.map((x) => {
-            const on = picked.indexOf(x.p.id) >= 0;
-            return (
-              <button key={x.p.id} onClick={() => toggle(x.p.id)} aria-pressed={on} style={{ position: "relative", height: 150, borderRadius: 16, overflow: "hidden", padding: 0, border: "2.5px solid " + (on ? "var(--accent)" : "transparent"), background: x.cover ? (x.cover.thumb ? "url(" + x.cover.thumb + ") center/cover" : x.cover.grad) : "var(--surface)", color: "var(--fg)", textAlign: "left" }}>
-                <span className="shade" style={{ opacity: on ? 1 : 0.85 }} />
-                <span className={"check" + (on ? " on" : "")} style={{ position: "absolute", top: 10, right: 10 }}>{on ? <Icon name="check" size={13} stroke={3} color="var(--accent-ink)" /> : null}</span>
-                {x.shared ? <span className="tag" style={{ position: "absolute", top: 10, left: 10, background: "rgba(0,0,0,0.5)", color: "var(--fg)" }}>Shared · {x.members.length}</span> : null}
-                <span className="stack gap4" style={{ position: "absolute", left: 12, right: 12, bottom: 12 }}>
-                  <span className="ellipsis" style={{ fontSize: 14.5, fontWeight: 700 }}>{x.p.name}</span>
-                  <span className="hrow gap6" style={{ fontSize: 11, color: "var(--fg-2)" }}><span className="dot" style={{ background: x.cat.color }} />{x.cat.name}</span>
-                </span>
-              </button>
-            );
-          })}
-          <button onClick={() => { set({ projectIds: picked }); nav.go("projectEdit", { back: 1 }); }} className="stack gap8" style={{ height: 150, borderRadius: 16, border: "1.5px dashed var(--line-strong)", background: "none", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 13, fontWeight: 600 }}><span className="plus"><Icon name="plus" size={16} stroke={2.3} color="var(--muted)" /></span>New project</button>
-        </div>
-        {!projects.length ? <p className="small faint" style={{ lineHeight: 1.45 }}>You don't have a project yet. Create one to file this glimpse in. You'll come straight back here.</p> : null}
-        {picked.length > 1 ? <p className="small faint" style={{ lineHeight: 1.45 }}>One upload, shared by all {picked.length}. It's stored once to save space.</p> : null}
-        <div style={{ height: 18 }} />
-      </div>
-      <div style={{ padding: "12px 20px calc(22px + env(safe-area-inset-bottom, 0px))", flexShrink: 0 }}>
-        <button className="btn" disabled={!picked.length} onClick={() => { set({ projectIds: picked, date }); nav.go("captureNote"); }}>{picked.length ? "Next: note & mood" : "Pick at least one project"}</button>
-      </div>
-      <DateSheet open={dateOpen} onClose={() => setDateOpen(false)} value={date} onPick={(k) => set({ date: k, projectIds: picked })} note="Filming something you missed? File it on the day it happened." />
-    </Screen>
-  );
-}
-
-// Mood picker shared by new entries and edits. Typed moods get an unused colour automatically.
 export function MoodPicker({ ownerId, mood, onMood, custom, onCustom, customColor, onCustomColor }) {
   const { db } = useApp();
   const list = (db.moods[ownerId] || []).filter((m) => !m.hidden);
@@ -560,7 +523,9 @@ export function NoteMood() {
   const [mood, setMood] = useState(d.mood || null);
   const [custom, setCustom] = useState("");
   const [customColor, setCustomColor] = useState(null);
+  const [dateOpen, setDateOpen] = useState(false);
   if (!d.source || !d.projectIds) return <Redirect to="capture" />;
+  const date = d.date || todayKey();
   const names = d.projectIds.map((id) => S.project(db, id));
   const save = async () => {
     if (saving) return;
@@ -583,19 +548,22 @@ export function NoteMood() {
   };
   return (
     <Screen>
-      <TopBar title="Note & mood" sub="New entry · Step 3 of 3 · both optional" backLabel="Back to projects" onBack={() => { setDraft(Object.assign({}, d, { note, mood })); nav.back(); }} />
-      <Steps n={3} of={3} />
+      <TopBar title="Note & mood" sub="New entry · Step 2 of 2 · both optional" backLabel="Back to trim" onBack={() => { setDraft(Object.assign({}, d, { note, mood })); nav.back(); }} />
+      <Steps n={2} of={2} />
       <div className="scroll pad stack gap20" style={{ paddingTop: 20 }}>
         <FilmedBanner d={d} setDraft={setDraft} />
         <div className="hrow gap14" style={{ alignItems: "stretch" }}>
           <ClipView muted m={{ grad: d.grad, thumb: d.thumb, liveId: d.source === "file" ? d.liveId : null, src: d.mediaId && S.media(db, d.mediaId) ? S.media(db, d.mediaId).src : null, kind: d.kind, motion: d.motion }} start={d.start} end={d.start + d.len} playing loop style={{ width: 110, height: 150, borderRadius: 14 }} />
           <div className="stack gap8" style={{ flex: 1, minWidth: 0 }}>
-            <span className="small muted">{dayLabel(d.date || todayKey())} · {d.len.toFixed(1)}s</span>
+            <div className="hrow between gap8">
+              <span className="stack gap2" style={{ minWidth: 0 }}><span className="small muted">Entry date</span><span style={{ fontSize: 14, fontWeight: 700 }}>{date === todayKey() ? "Today · " + dayLabel(date) : relDay(date)}</span></span>
+              <button className="chipbtn" onClick={() => setDateOpen(true)}>Change</button>
+            </div>
+            <span className="small faint num">{d.len.toFixed(1)}s</span>
             <span className="sec" style={{ fontSize: 10.5 }}>Adding to</span>
             <div className="hrow wrap gap6">
               {names.map((p) => { const x = S.myProjects(db, me.id).find((y) => y.p.id === p.id); const col = x ? x.cat.color : "#5BA3A0"; return <span key={p.id} className="tag" style={{ background: hexA(col, 0.15), color: col, fontSize: 11.5, padding: "4px 9px" }}><span className="dot" style={{ width: 6, height: 6, background: col }} />{p.name}</span>; })}
             </div>
-            {names.length > 1 ? <span className="small faint" style={{ lineHeight: 1.4 }}>One upload, shared by all. The note and mood are copied to each.</span> : null}
           </div>
         </div>
         <div className="stack gap8">
@@ -609,6 +577,7 @@ export function NoteMood() {
         <button className="btn" disabled={saving} onClick={save}><Icon name="check" size={16} stroke={2.8} />{saving ? (d.mediaId || d.uploadPct == null ? "Saving…" : "Finishing upload · " + Math.round((d.uploadPct || 0) * 100) + "%") : "Save entry"}</button>
         <span className="small faint" style={{ textAlign: "center" }}>Uploads in the background. You can leave this screen.</span>
       </div>
+      <DateSheet open={dateOpen} onClose={() => setDateOpen(false)} value={date} onPick={(k) => setDraft(Object.assign({}, d, { date: k, note, mood }))} note="Filming something you missed? File it on the day it happened." />
     </Screen>
   );
 }

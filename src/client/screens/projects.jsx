@@ -103,7 +103,7 @@ function ClipSheet({ e, onClose }) {
             <div className="stack gap6" style={{ flex: 1, minWidth: 0 }}>
               <span className="hrow gap8"><Avatar user={author} size={22} ring={false} /><span style={{ fontSize: 13, fontWeight: 700 }}>Filmed by {mine ? "you" : S.firstName(author)}</span></span>
               <span className="muted" style={{ fontSize: 12.5 }}>{fullDay(e.date)} · {c.len.toFixed(1)}s</span>
-              <span style={{ fontSize: 14, lineHeight: 1.4 }}>{e.note ? "“" + e.note + "”" : <span className="faint">No note</span>}</span>
+              {e.note ? <span style={{ fontSize: 14, lineHeight: 1.4 }}>“{e.note}”</span> : null}
               {e.mood ? <span className="hrow gap6 small muted"><span className="dot" style={{ background: S.moodColor(db, e.authorId, e.mood) }} />{e.mood}</span> : null}
             </div>
           </div>
@@ -536,12 +536,12 @@ export function Members({ params }) {
         {owner ? (
           <div className="stack gap10">
             <div className="hrow between" style={{ alignItems: "baseline" }}><span className="sec">Invite by email</span>{left !== null ? <span className="small faint">{left} of {limit} invites left today</span> : null}</div>
-            <form className="hrow gap8" onSubmit={(e) => { e.preventDefault(); sendEmail(); }}>
+            <form className="hrow gap8" style={{ alignItems: "stretch" }} onSubmit={(e) => { e.preventDefault(); sendEmail(); }}>
               <div className="hrow gap10" style={{ flex: 1, padding: "11px 14px", borderRadius: 12, background: "var(--surface)", border: "1px solid var(--line)" }}>
                 <Icon name="mail" size={16} color="var(--faint)" />
                 <input type="email" aria-label="Email address" placeholder="friend@example.com" value={email} onChange={(e) => setEmail(e.target.value)} style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", color: "var(--fg)", fontSize: 14 }} />
               </div>
-              <button className="btn" type="submit" disabled={!valid} style={{ width: "auto", padding: "0 16px", fontSize: 14 }}>Invite</button>
+              <button className="btn" type="submit" disabled={!valid} style={{ width: "auto", flexShrink: 0, minHeight: 44, padding: "0 20px", borderRadius: 12, fontSize: 14 }}>Invite</button>
             </form>
             <span className="small faint" style={{ lineHeight: 1.4 }}>If they're already on this server they'll get a notification; if not, an email to join. For privacy, you won't be told which.{!admin && !db.server.userInvites ? " New people need the admin's OK first." : ""}</span>
             {Object.keys(known).length ? (

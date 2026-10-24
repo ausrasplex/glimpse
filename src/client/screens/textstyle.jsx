@@ -11,7 +11,7 @@ const { useState, useEffect, useRef, useMemo } = React;
 
 // ---------- Preview ----------
 // Laid out with the renderer's own code, measured in the real fonts, so it matches the finished video.
-export function TextPreview({ items, w, h, back }) {
+export function TextPreview({ items, w, h, back, quiet, radius = 10 }) {
   // Re-measured once the fonts have loaded.
   const loading = useFontsLoading(items.map((it) => it.look.font));
   const short = Math.min(w, h);
@@ -20,7 +20,7 @@ export function TextPreview({ items, w, h, back }) {
     return layoutBox(it.look, it.lines, short, (t, px, wt) => m(t, px, wt) + sp * px * Array.from(t).length);
   }), w, h);
   return (
-    <div style={{ position: "relative", width: w, height: h, borderRadius: 10, overflow: "hidden", background: "#000" }} aria-label="Preview of the text on the video" role="img">
+    <div style={{ position: "relative", width: w, height: h, borderRadius: radius, overflow: "hidden", background: "#000" }} aria-label="Preview of the text on the video" role="img">
       {back}
       {boxes.map((b, i) => (
         <div key={i} style={{ position: "absolute", left: b.x, top: b.y, width: b.w, height: b.h, borderRadius: b.r, background: b.look.bgOpacity > 0 ? hexAlpha(b.look.bg, b.look.bgOpacity) : "transparent", pointerEvents: "none" }}>
@@ -29,7 +29,7 @@ export function TextPreview({ items, w, h, back }) {
           ))}
         </div>
       ))}
-      {loading ? <span className="tiny" style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", padding: "3px 8px", borderRadius: 8, background: "rgba(0,0,0,0.55)", color: "#F2EFE9" }}>Loading font…</span> : null}
+      {loading && !quiet ? <span className="tiny" style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", padding: "3px 8px", borderRadius: 8, background: "rgba(0,0,0,0.55)", color: "#F2EFE9" }}>Loading font…</span> : null}
     </div>
   );
 }

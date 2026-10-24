@@ -21,6 +21,7 @@ export function queue(name: QName): Queue {
 const opts = { removeOnComplete: 200, removeOnFail: 500 };
 export const enqueue = {
   processMedia: (mediaId: string) => queue(Q.media).add("process", { mediaId }, { ...opts, jobId: "media-" + mediaId, attempts: 2, backoff: { type: "fixed", delay: 5000 } }),
+  motionVideo: (mediaId: string, fromId: string) => queue(Q.media).add("motion", { mediaId, fromId }, { ...opts, jobId: "motion-" + mediaId, attempts: 2 }),
   importImmich: (mediaId: string, userId: string, assetId: string) => queue(Q.media).add("immich", { mediaId, userId, assetId }, { ...opts, jobId: "immich-" + mediaId, attempts: 2 }),
   renderMash: (mashId: string) => queue(Q.mash).add("render", { mashId }, { ...opts, jobId: "mash-" + mashId + "-" + Date.now() }),
   processTrack: (trackId: string) => queue(Q.track).add("process", { trackId }, { ...opts, jobId: "track-" + trackId }),
