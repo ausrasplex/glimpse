@@ -1,4 +1,4 @@
-import { handle, requireUser } from "@/server/http";
+import { handle, requireFileUser } from "@/server/http";
 import { previewFont, known } from "@/server/fonts";
 import { getSettings } from "@/server/settings";
 export const dynamic = "force-dynamic";
@@ -6,8 +6,8 @@ export const dynamic = "force-dynamic";
 const name = (v: string) => { try { return decodeURIComponent(v); } catch { return v; } };
 
 // Just enough of a font to write its own name, for the picker's list.
-export const GET = handle(async (_req: Request, ctx: { params: Promise<{ family: string }> }) => {
-  await requireUser();
+export const GET = handle(async (req: Request, ctx: { params: Promise<{ family: string }> }) => {
+  await requireFileUser(req);
   const family = name((await ctx.params).family);
   if (!known(family)) return new Response("Not found", { status: 404 });
   const s = await getSettings();

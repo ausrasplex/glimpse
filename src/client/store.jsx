@@ -3,6 +3,7 @@ import React from "react";
 import { GRADS } from "./util.js";
 import * as S from "./sel.js";
 import { updatePending } from "./resumable.js";
+import { app, apiUrl, apiHeaders, fromServer } from "./platform.js";
 
 const { createContext, useContext, useState, useEffect, useRef, useCallback } = React;
 const Ctx = createContext(null);
@@ -12,11 +13,13 @@ export const live = { video: {}, audio: {} };
 
 // ---------- Server calls ----------
 export async function api(path, opts) {
-  const r = await fetch(path, Object.assign({ credentials: "same-origin" }, opts || {}));
+  const o = Object.assign({ credentials: "same-origin" }, opts || {});
+  o.headers = Object.assign({}, apiHeaders(), o.headers || {});
+  const r = await fetch(apiUrl(path), o);
   let body = null;
   try { body = await r.json(); } catch (e) { body = null; }
   if (!r.ok) { const err = new Error((body && body.error) || "Couldn't reach the server. Check your connection."); err.status = r.status; throw err; }
-  return body;
+  return fromServer(body);
 }
 export const post = (path, data) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data || {}) });
 
@@ -24,8 +27,9 @@ export const post = (path, data) => api(path, { method: "POST", headers: { "Cont
 export function upload(path, file, headers, onProgress) {
   return new Promise((resolve, reject) => {
     const x = new XMLHttpRequest();
-    x.open("POST", path);
-    Object.keys(headers || {}).forEach((k) => x.setRequestHeader(k, headers[k]));
+    x.open("POST", apiUrl(path));
+    const all = Object.assign({}, apiHeaders(), headers || {});
+    Object.keys(all).forEach((k) => x.setRequestHeader(k, all[k]));
     x.setRequestHeader("Content-Type", file.type || "application/octet-stream");
     x.setRequestHeader("X-File-Name", encodeURIComponent(file.name || "upload"));
     x.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
@@ -170,6 +174,12 @@ export function AppProvider({ initial, children }) {
     document.documentElement.style.setProperty("--accent-soft", "rgba(" + (n >> 16) + "," + ((n >> 8) & 255) + "," + (n & 255) + ",0.14)");
   }, [accent]);
 
+  // Android's back button (the app): one screen back, else Home, else it's the app's to close (returns false).
+  if (app) app.back = () => {
+    if (stack.length > 1) { window.history.back(); return true; }
+    if (meUser && nav.current.name !== "home") { nav.reset("home"); return true; }
+    return false;
+  };
   const value = { db, setDb, refresh, act, local, actSoon, nav, toast, toastState, setToast, me: meUser, draft, setDraft, mashDraft, setMashDraft, accent };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

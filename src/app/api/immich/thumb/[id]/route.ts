@@ -1,8 +1,8 @@
-import { currentSession } from "@/server/session";
+import { fileSession } from "@/server/session";
 import { immich } from "@/server/immich";
 export const dynamic = "force-dynamic";
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const s = await currentSession();
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const s = await fileSession(req);
   const { id } = await ctx.params;
   if (!s || !/^[\w-]+$/.test(id)) return new Response("Not found", { status: 404 });
   try {

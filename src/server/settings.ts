@@ -68,9 +68,11 @@ export const ssoFromEnv = () => !!env.oidcEnv;
 export const ssoSecret = (s: ServerSettings) => (env.oidcEnv ? env.oidcEnv.clientSecret : decrypt(s.sso.secretEnc));
 
 // What any signed-in person (and the public sign-in page) may see.
+/** What the Android app can rely on. Raise it when the app needs something new from the server. */
+export const APP_API = 1;
 export function publicSettings(s: ServerSettings, admin: boolean) {
   const pub = {
-    name: s.name, url: env.appUrl, version: env.version, tz: s.tz, setupDone: s.setupDone, loginBg: s.loginBg,
+    name: s.name, url: env.appUrl, version: env.version, appApi: APP_API, tz: s.tz, setupDone: s.setupDone, loginBg: s.loginBg,
     lockAfter: s.lockAfter, userInvites: s.userInvites, perDay: s.perDay, defaultQuota: s.defaultQuota,
     musicUploads: s.musicUploads, trackSize: s.trackSize, formats: s.formats, maxRes: s.maxRes, mashQuality: s.mashQuality, clipLimit: s.clipLimit, googleFonts: s.googleFonts,
     email: { ok: s.email.ok },

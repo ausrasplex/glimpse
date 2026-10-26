@@ -1,5 +1,6 @@
 import React from "react";
 import { useApp, api, post } from "../store.jsx";
+import { startSso } from "../platform.js";
 import { Icon, Logo } from "../icons.jsx";
 import { Screen, PassInput, Strength, TimezonePicker, detectedZone, zoneLabel, Avatar, Thumb, Opts } from "../ui.jsx";
 import { GRADS } from "../util.js";
@@ -92,7 +93,7 @@ export function Login({ params }) {
         </div>
         {sso.on && !recovery ? (
           <div className="stack gap12" style={{ marginTop: 24 }}>
-            <SsoButton primary={!pwOn} label={ssoLabel(sso)} onClick={() => { window.location.href = "/api/auth/oidc/start"; }} />
+            <SsoButton primary={!pwOn} label={ssoLabel(sso)} onClick={() => startSso("/api/auth/oidc/start")} />
             {ssoErr ? <span className="errtext" role="alert">{ssoErr}</span> : null}
             {pwOn ? <OrRule text="or use your password" /> : <span className="small faint" style={{ textAlign: "center" }}>This server only uses single sign-on.</span>}
           </div>
@@ -241,7 +242,7 @@ export function Signup({ params }) {
         </div>
         {ssoOn ? (
           <div className="stack gap12" style={{ marginTop: 20 }}>
-            <SsoButton primary={!pwOn} label={"Join with " + ((db.server.sso.label || "").trim() || "SSO")} onClick={() => { window.location.href = "/api/auth/oidc/start?invite=" + encodeURIComponent(params.token); }} />
+            <SsoButton primary={!pwOn} label={"Join with " + ((db.server.sso.label || "").trim() || "SSO")} onClick={() => { startSso("/api/auth/oidc/start?invite=" + encodeURIComponent(params.token));}} />
             <span className="small faint" style={{ lineHeight: 1.45 }}>{inv.email ? "Your SSO account's email must be " + inv.email + "." : "Uses the name and email from your SSO account. No Glimpse password needed."}</span>
             {pwOn ? <OrRule text="or create a password" /> : null}
           </div>

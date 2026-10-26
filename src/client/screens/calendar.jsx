@@ -1,12 +1,14 @@
 import React from "react";
 import { useApp } from "../store.jsx";
 import { Icon } from "../icons.jsx";
-import { Screen, Sheet, Thumb, ClipView, PlayBadge, Avatar, DateSheet, Menu, Confirm } from "../ui.jsx";
+import { Screen, Sheet, Thumb, ClipView, PlayBadge, Avatar, Confirm } from "../ui.jsx";
 import { MoodPicker, resolveMood } from "./capture.jsx";
 import * as S from "../sel.js";
+import { download } from "../platform.js";
+import { stampDate } from "../../shared/mash";
 import { todayKey, addDays, dayKey, parseKey, MONTH, fullDay, dayLabel, relDay, monthDay, fmtSec, hexA, rel } from "../util.js";
 
-const { useState, useMemo } = React;
+const { useState, useMemo, useRef, useEffect } = React;
 
 // Which project the calendar and grid show. Remembered for the session.
 let lastProject = null;
@@ -130,7 +132,7 @@ export function Calendar({ params }) {
             const isFuture = c.key > t;
             const bg = m && c.inMonth ? (m.thumb ? "url(" + m.thumb + ") center/cover" : m.grad) : undefined;
             return (
-              <button key={c.key} disabled={isFuture || !c.inMonth} onClick={() => { setDay(c.key); setChosen(c.key); }} aria-label={fullDay(c.key) + (es.length ? ", " + es.length + " clip" + (es.length > 1 ? "s" : "") : "")} className={"day" + (c.inMonth ? "" : " out") + (es.length && c.inMonth ? " has" : "") + (c.key === t ? " today" : "") + (c.key === chosen ? " sel" : "")} style={{ background: bg, opacity: isFuture && c.inMonth ? 0.45 : 1, cursor: isFuture || !c.inMonth ? "default" : "pointer" }}>
+              <button key={c.key} disabled={isFuture || !c.inMonth} onClick={() => { setChosen(c.key); if (es.length === 1) nav.go("entry", { entryId: es[0].id }); else setDay(c.key); }} aria-label={fullDay(c.key) + (es.length ? ", " + es.length + " clip" + (es.length > 1 ? "s" : "") : "")} className={"day" + (c.inMonth ? "" : " out") + (es.length && c.inMonth ? " has" : "") + (c.key === t ? " today" : "") + (c.key === chosen ? " sel" : "")} style={{ background: bg, opacity: isFuture && c.inMonth ? 0.45 : 1, cursor: isFuture || !c.inMonth ? "default" : "pointer" }}>
                 <span className="n">{c.n}</span>
                 {es.length > 1 && c.inMonth ? <span className="count">{es.length}</span> : null}
               </button>
@@ -259,11 +261,102 @@ export function EntryEditSheet({ entry, open, onClose }) {
   );
 }
 
+// The project's clips in order, oldest first, for moving between days.
+function neighbours(db, e) {
+  const all = S.projectEntries(db, e.projectId).slice().sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : x.createdAt - y.createdAt));
+  const i = all.findIndex((x) => x.id === e.id);
+  return { prev: i > 0 ? all[i - 1] : null, next: i >= 0 && i < all.length - 1 ? all[i + 1] : null };
+}
+
+// A sideways swipe: left for the next day, right for the day before. Up and down still scroll.
+function useSwipe(onPrev, onNext) {
+  const at = useRef(null);
+  const swiped = useRef(false);
+  return {
+    style: { touchAction: "pan-y" },
+    onPointerDown: (ev) => { at.current = { x: ev.clientX, y: ev.clientY }; swiped.current = false; },
+    onPointerUp: (ev) => {
+      const p = at.current; at.current = null;
+      if (!p) return;
+      const dx = ev.clientX - p.x, dy = ev.clientY - p.y;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      swiped.current = true;
+      if (dx < 0) { if (onNext) onNext(); } else if (onPrev) onPrev();
+    },
+    onPointerCancel: () => { at.current = null; },
+    // A swipe that ends on a button isn't a tap.
+    onClickCapture: (ev) => { if (swiped.current) { swiped.current = false; ev.stopPropagation(); ev.preventDefault(); } }
+  };
+}
+
+const AR = { portrait: 9 / 16, landscape: 16 / 9, square: 1 };
+
+// Full-screen playback with the day and note on the clip, like a mash. Swipe (or use the arrows) for other days.
+function Player({ entryId, onClose }) {
+  const { db } = useApp();
+  const [id, setId] = useState(entryId);
+  const [playing, setPlaying] = useState(true);
+  const [dir, setDir] = useState(0);
+  const area = useRef(null);
+  const [room, setRoom] = useState({ w: 390, h: 760 });
+  const e = S.entry(db, id) || S.entry(db, entryId);
+  const { prev, next } = neighbours(db, e);
+  const go = (x, d) => { if (!x) return; setDir(d); setId(x.id); setPlaying(true); };
+  const close = () => onClose(e.id);
+  const swipe = useSwipe(() => go(prev, -1), () => go(next, 1));
+  useEffect(() => {
+    const el = area.current;
+    const measure = () => { if (el) setRoom({ w: el.clientWidth, h: el.clientHeight }); };
+    measure();
+    if (!el || !window.ResizeObserver) return;
+    const ro = new ResizeObserver(measure); ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  useEffect(() => {
+    const key = (ev) => {
+      if (ev.key === "Escape") close();
+      else if (ev.key === "ArrowLeft") go(prev, -1);
+      else if (ev.key === "ArrowRight") go(next, 1);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  });
+  const c = S.clipOf(db, e);
+  const ar = AR[c.m.orient] || AR.portrait;
+  const w = Math.min(room.w, Math.round(room.h * ar)), h = Math.round(w / ar);
+  const short = Math.min(w, h);
+  const fs = Math.max(13, Math.min(22, Math.round(short * 0.045)));
+  const day = stampDate(e.date, "short") + (e.date.slice(0, 4) !== todayKey().slice(0, 4) ? " " + e.date.slice(0, 4) : "");
+  const pill = { padding: Math.round(fs * 0.35) + "px " + Math.round(fs * 0.6) + "px", borderRadius: Math.round(fs * 0.45), background: "rgba(0,0,0,0.45)", color: "#FFFFFF", fontSize: fs, fontWeight: 600, lineHeight: 1.3 };
+  const edge = Math.round(short * 0.045);
+  const side = (label, icon, x, d, pos) => x ? <button className="iconbtn" aria-label={label} onClick={() => go(x, d)} style={Object.assign({ position: "absolute", top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.4)", zIndex: 2 }, pos)}><Icon name={icon} size={18} /></button> : null;
+  return (
+    <div role="dialog" aria-label={"Playing " + fullDay(e.date)} style={{ position: "absolute", inset: 0, zIndex: 50, background: "#000", display: "flex", flexDirection: "column", animation: "fade 0.15s ease-out" }}>
+      <div ref={area} {...swipe} style={Object.assign({ position: "relative", flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }, swipe.style)}>
+        <div key={e.id} className={dir > 0 ? "from-right" : dir < 0 ? "from-left" : ""} style={{ position: "relative", width: w, height: h }}>
+          <ClipView m={c.m} start={c.start} end={c.end} playing={playing} loop={false} onEnded={() => setPlaying(false)} style={{ position: "absolute", inset: 0, borderRadius: 0 }}>
+            <span style={Object.assign({ position: "absolute", top: edge, right: edge }, pill)}>{day}</span>
+            {e.note ? <span style={Object.assign({ position: "absolute", left: edge, bottom: edge, maxWidth: "78%", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }, pill)}>{e.note}</span> : null}
+          </ClipView>
+          <button aria-label={playing ? "Pause" : "Play again"} onClick={() => setPlaying(!playing)} style={{ position: "absolute", inset: 0, background: "transparent", border: "none", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#F2EFE9" }}>
+            {!playing ? <span style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="play" size={24} /></span> : null}
+          </button>
+        </div>
+        {side("Previous day", "chevL", prev, -1, { left: 12 })}
+        {side("Next day", "chevR", next, 1, { right: 12 })}
+      </div>
+      <button className="iconbtn" aria-label="Close" onClick={close} style={{ position: "absolute", top: "calc(16px + env(safe-area-inset-top, 0px))", left: 16, background: "rgba(0,0,0,0.45)", zIndex: 3 }}><Icon name="close" size={17} stroke={2.2} /></button>
+    </div>
+  );
+}
+
 export function EntryDetail({ params }) {
-  const { db, act, nav, me, toast } = useApp();
+  const { db, act, nav, me, toast, setDraft } = useApp();
   const e = S.entry(db, params.entryId);
-  const [playing, setPlaying] = useState(false);
+  const [full, setFull] = useState(false);
   const [sheet, setSheet] = useState(null);
+  const near = e ? neighbours(db, e) : {};
+  const swipe = useSwipe(near.prev ? () => nav.replace("entry", { entryId: near.prev.id }) : null, near.next ? () => nav.replace("entry", { entryId: near.next.id }) : null);
   if (!e) {
     return <Screen><div className="topbar"><button className="iconbtn" aria-label="Back" onClick={nav.back}><Icon name="back" size={17} /></button></div><div className="small faint" style={{ padding: 40, textAlign: "center" }}>This entry was removed.</div></Screen>;
   }
@@ -284,18 +377,16 @@ export function EntryDetail({ params }) {
     try { await act("deleteClipEverywhere", { entryId: e.id }); } catch (x) { return; }
     nav.back(); toast("Clip deleted everywhere");
   };
+  const replace = () => { setDraft({ date: e.date, presetProjectId: e.projectId, replaceEntryId: e.id, returnTo: "entry" }); nav.go("capture"); };
+  const addToDay = () => { setDraft({ date: e.date, presetProjectId: e.projectId, returnTo: "entry" }); nav.go("capture"); };
   return (
     <Screen>
-      <div className="scroll">
+      <div className="scroll" {...swipe} style={swipe.style}>
         <div style={{ position: "relative", height: 470, flexShrink: 0 }}>
-          <ClipView m={c.m} start={c.start} end={c.end} playing={playing} loop={false} onEnded={() => setPlaying(false)} style={{ position: "absolute", inset: 0, borderRadius: 0 }} />
+          <ClipView m={c.m} start={c.start} end={c.end} playing={false} style={{ position: "absolute", inset: 0, borderRadius: 0 }} />
           <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,0,0,0.35), transparent 25%, transparent 70%, #121212)", pointerEvents: "none" }} />
-          <div className="hrow between" style={{ position: "absolute", top: 20, left: 20, right: 20 }}>
-            <button className="iconbtn" aria-label="Back" onClick={nav.back} style={{ background: "rgba(0,0,0,0.45)" }}><Icon name="back" size={17} stroke={2.2} /></button>
-            <button className="iconbtn" aria-label="Entry options" onClick={() => setSheet("menu")} style={{ background: "rgba(0,0,0,0.45)" }}><Icon name="more" size={18} /></button>
-          </div>
-          {!playing ? <button aria-label="Play" onClick={() => setPlaying(true)} style={{ position: "absolute", top: "46%", left: "50%", transform: "translate(-50%,-50%)", width: 64, height: 64, borderRadius: "50%", background: "rgba(0,0,0,0.4)", border: "none", display: "flex", alignItems: "center", justifyContent: "center", color: "#F2EFE9" }}><Icon name="play" size={24} /></button>
-            : <button aria-label="Pause" onClick={() => setPlaying(false)} style={{ position: "absolute", inset: "70px 0 90px", background: "transparent", border: "none" }} />}
+          <button className="iconbtn" aria-label="Back" onClick={nav.back} style={{ position: "absolute", top: 20, left: 20, background: "rgba(0,0,0,0.45)" }}><Icon name="back" size={17} stroke={2.2} /></button>
+          <button aria-label="Play full screen" onClick={() => setFull(true)} style={{ position: "absolute", top: "46%", left: "50%", transform: "translate(-50%,-50%)", width: 64, height: 64, borderRadius: "50%", background: "rgba(0,0,0,0.4)", border: "none", display: "flex", alignItems: "center", justifyContent: "center", color: "#F2EFE9" }}><Icon name="play" size={24} /></button>
           <div className="stack gap6" style={{ position: "absolute", left: 20, right: 20, bottom: 18, pointerEvents: "none" }}>
             <span style={{ fontSize: 13, color: "var(--fg-2)" }}>{fullDay(e.date)} · {new Date(e.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
             {e.note ? <span style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.25 }}>{e.note}</span> : null}
@@ -309,43 +400,43 @@ export function EntryDetail({ params }) {
           </div>
           <div className="stack gap8">
             <span className="sec">In {siblings.length > 1 ? "these projects" : "this project"}</span>
-            <div className="card flush list">
-              {siblings.map((x) => {
-                const xp = S.project(db, x.projectId);
-                const xc = S.clipOf(db, x);
-                return (
-                  <button key={x.id} className="row" onClick={() => x.id !== e.id && nav.replace("entry", { entryId: x.id })}>
-                    <Thumb m={S.coverOf(db, xp.id)} style={{ width: 34, height: 34, borderRadius: 9 }} />
-                    <span className="grow"><span className="t">{xp.name}{x.id === e.id ? <span className="tag" style={{ marginLeft: 8 }}>Viewing</span> : null}</span><span className="s" style={{ color: x.trim ? "var(--accent)" : undefined }}>{x.trim ? "Custom trim for this project · " + fmtSec(xc.start) + " – " + fmtSec(xc.end) : "Uses the clip's own trim"}</span></span>
-                  </button>
-                );
-              })}
+            <div className="card flush hrow">
+              <div className="list" style={{ flex: 1, minWidth: 0 }}>
+                {siblings.map((x) => {
+                  const xp = S.project(db, x.projectId);
+                  const xc = S.clipOf(db, x);
+                  return (
+                    <button key={x.id} className="row" onClick={() => x.id !== e.id && nav.replace("entry", { entryId: x.id })}>
+                      <Thumb m={S.coverOf(db, xp.id)} style={{ width: 34, height: 34, borderRadius: 9 }} />
+                      <span className="grow"><span className="t">{xp.name}{x.id === e.id && siblings.length > 1 ? <span className="tag" style={{ marginLeft: 8 }}>Viewing</span> : null}</span><span className="s" style={{ color: x.trim ? "var(--accent)" : undefined }}>{x.trim ? "Custom trim for this project · " + fmtSec(xc.start) + " – " + fmtSec(xc.end) : "Uses the clip's own trim"}</span></span>
+                    </button>
+                  );
+                })}
+              </div>
+              {mine ? <button className="chipbtn hrow gap4" aria-label="Change projects" onClick={() => setSheet("projects")} style={{ margin: "0 14px 0 4px", flexShrink: 0 }}><Icon name="layers" size={14} />Change</button> : null}
             </div>
           </div>
           {mine || owner ? (
             <div className="grid2">
-              {mine ? <button className="btn ghost sm" onClick={() => setSheet("edit")}><Icon name="edit" size={15} />Edit note</button> : <button className="btn ghost sm" onClick={() => setSheet("date")}><Icon name="calendar" size={15} />Move day</button>}
+              {mine ? <button className="btn ghost sm" onClick={() => setSheet("edit")}><Icon name="edit" size={15} />Edit note</button> : null}
               <button className="btn ghost sm" onClick={() => nav.go("capture", { entryId: e.id })}><Icon name="scissors" size={15} />Adjust trim</button>
+              {mine ? <button className="btn ghost sm" onClick={replace}><Icon name="repeat" size={15} />Replace video</button> : null}
+              {mine ? <button className="btn ghost sm" onClick={() => download("/api/files/media/" + e.mediaId + "/original")}><Icon name="download" size={15} />Download</button> : null}
             </div>
           ) : <span className="small faint" style={{ lineHeight: 1.45 }}>Only {S.firstName(author)} or the project owner can change this clip.</span>}
           {!mine && owner ? <span className="small faint" style={{ lineHeight: 1.45 }}>Owner tools apply to {p.name} only. {S.firstName(author)}'s original clip and other projects aren't touched. The note and mood can only be edited by {S.firstName(author)}.</span> : null}
+          <button className="btn dashed" onClick={addToDay}><Icon name="plus" size={15} stroke={2.4} />Add another clip to this day</button>
+          {mine || owner ? (
+            <div className="stack gap4">
+              <button className="btn danger-ghost sm" onClick={removeHere}><Icon name="trash" size={15} />{siblings.length > 1 || !mine ? "Remove from " + p.name + " only" : "Delete this entry"}</button>
+              {mine && siblings.length > 1 ? <button className="btn danger-ghost sm" onClick={() => setSheet("delete")}><Icon name="trash" size={15} />Delete everywhere</button> : null}
+            </div>
+          ) : null}
           <div style={{ height: 20 }} />
         </div>
       </div>
-      <Sheet open={sheet === "menu"} onClose={() => setSheet(null)} label="Clip options">
-        <Menu items={[
-          mine ? { label: "Edit note & mood", icon: "edit", onClick: () => setSheet("edit") } : null,
-          mine ? { label: "Change projects", icon: "layers", onClick: () => setSheet("projects") } : null,
-          mine || owner ? { label: "Move to another day", icon: "calendar", onClick: () => setSheet("date") } : null,
-          mine || owner ? { label: "Adjust trim", icon: "scissors", onClick: () => { setSheet(null); nav.go("capture", { entryId: e.id }); } } : null,
-          mine ? { label: "Download original", icon: "download", onClick: () => { setSheet(null); window.location.href = "/api/files/media/" + e.mediaId + "/original"; } } : null,
-          mine || owner ? "-" : null,
-          mine || owner ? { label: siblings.length > 1 || !mine ? "Remove from " + p.name + " only" : "Delete this entry", icon: "trash", danger: true, onClick: () => { setSheet(null); removeHere(); } } : null,
-          mine && siblings.length > 1 ? { label: "Delete everywhere", icon: "trash", danger: true, onClick: () => setSheet("delete") } : null
-        ]} />
-      </Sheet>
+      {full ? <Player entryId={e.id} onClose={(id) => { setFull(false); if (id !== e.id) nav.replace("entry", { entryId: id }); }} /> : null}
       {sheet === "edit" ? <EntryEditSheet entry={e} open onClose={() => setSheet(null)} /> : null}
-      <DateSheet open={sheet === "date"} onClose={() => setSheet(null)} value={e.date} title="Move to another day" note={mine ? "Moves it in " + p.name + " only." : "Moves " + S.firstName(author) + "'s clip in " + p.name + " only."} onPick={(k) => { act("moveEntry", { entryId: e.id, date: k }).then(() => toast("Moved to " + relDay(k))).catch(() => {}); }} />
       <Sheet open={sheet === "projects"} onClose={() => setSheet(null)} title="Change projects">
         <div className="stack gap8">
           <span className="small muted">Tick where this clip should appear. It's still one upload.</span>

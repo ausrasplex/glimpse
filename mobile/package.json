@@ -1,0 +1,26 @@
+{
+  "name": "glimpse-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Glimpse Android app (Capacitor). Separate from the server: nothing here is part of the Docker image.",
+  "scripts": {
+    "build": "node build.mjs",
+    "sync": "node build.mjs && cap sync android",
+    "apk": "node build.mjs && cap sync android && node scripts/gradle.mjs assembleDebug",
+    "apk:release": "node build.mjs && cap sync android && node scripts/gradle.mjs assembleRelease",
+    "open": "cap open android"
+  },
+  "dependencies": {
+    "@aparajita/capacitor-secure-storage": "8.0.1",
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/browser": "8.0.5",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/haptics": "8.0.2",
+    "@capacitor/preferences": "8.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3",
+    "esbuild": "0.28.2"
+  }
+}

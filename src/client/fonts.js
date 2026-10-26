@@ -2,6 +2,7 @@
 // Full fonts load as "GF <family>"; picker rows use tiny preview fonts named "GFP <family>". Until one arrives
 // the text shows in Inter, so nothing is ever blank.
 import React from "react";
+import { fileUrl } from "./platform.js";
 
 const { useState, useEffect } = React;
 const loads = {};
@@ -16,7 +17,7 @@ function load(name, url) {
   }
   return loads[name];
 }
-const path = (kind, family) => "/api/fonts/" + kind + "/" + encodeURIComponent(family);
+const path = (kind, family) => fileUrl("/api/fonts/" + kind + "/" + encodeURIComponent(family));
 
 export const fontStack = (family) => '"GF ' + family + '", "Inter", system-ui, sans-serif';
 export const previewStack = (family) => '"GFP ' + family + '", "GF ' + family + '", "Inter", system-ui, sans-serif';

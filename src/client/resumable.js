@@ -1,9 +1,12 @@
 // Resumable uploads for clips and photos. The file goes up in pieces; if the connection drops or the phone
 // pauses the page, it waits and continues from the last piece the server has. The file and the capture draft
 // are kept in IndexedDB while uploading, so a reloaded page can offer to carry on.
+import { app, apiUrl, apiHeaders } from "./platform.js";
 
 const req = async (path, opts) => {
-  const r = await fetch(path, Object.assign({ credentials: "same-origin" }, opts || {}));
+  const o = Object.assign({ credentials: "same-origin" }, opts || {});
+  o.headers = Object.assign({}, apiHeaders(), o.headers || {});
+  const r = await fetch(apiUrl(path), o);
   let body = null;
   try { body = await r.json(); } catch (e) { body = null; }
   if (!r.ok) { const err = new Error((body && body.error) || "Upload failed (" + r.status + ")"); err.status = r.status; throw err; }
@@ -14,7 +17,9 @@ const req = async (path, opts) => {
 function putPiece(uploadId, offset, blob, onProgress) {
   return new Promise((resolve, reject) => {
     const x = new XMLHttpRequest();
-    x.open("PUT", "/api/upload/media/session/" + encodeURIComponent(uploadId));
+    x.open("PUT", apiUrl("/api/upload/media/session/" + encodeURIComponent(uploadId)));
+    const h = apiHeaders();
+    Object.keys(h).forEach((k) => x.setRequestHeader(k, h[k]));
     x.setRequestHeader("X-Offset", String(offset));
     x.setRequestHeader("Content-Type", "application/octet-stream");
     x.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
@@ -53,6 +58,8 @@ const letSleep = () => { awake.count = Math.max(0, awake.count - 1); if (!awake.
  * Returns { promise (resolves to the media id), cancel }.
  */
 export function resumableUpload(file, type, cb, resume) {
+  // In the app, a file from the phone's gallery or camera uploads natively and keeps going in the background.
+  if (file && file.uri && app && app.upload) return app.upload(file, type, cb, resume);
   cb = cb || {};
   let cancelled = false;
   const run = async () => {
@@ -114,7 +121,7 @@ async function tx(mode, fn) {
     });
   } catch (e) { return null; }
 }
-export const savePending = (rec) => tx("readwrite", (s) => s.put(Object.assign({ at: Date.now() }, rec, { file: rec.file && rec.file.size <= KEEP_FILE_MAX ? rec.file : null })));
+export const savePending = (rec) => tx("readwrite", (s) => s.put(Object.assign({ at: Date.now() }, rec, { file: rec.file && (rec.file.uri || rec.file.size <= KEEP_FILE_MAX) ? rec.file : null })));
 export async function updatePending(uploadId, patch) {
   const cur = await tx("readonly", (s) => s.get(uploadId));
   if (cur) await tx("readwrite", (s) => s.put(Object.assign(cur, patch)));

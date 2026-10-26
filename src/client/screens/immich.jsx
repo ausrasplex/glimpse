@@ -1,5 +1,6 @@
 import React from "react";
 import { useApp, api } from "../store.jsx";
+import { fileUrl } from "../platform.js";
 import { Icon } from "../icons.jsx";
 import { Screen, TopBar, Opts } from "../ui.jsx";
 import { todayKey, relDay, dayLabel } from "../util.js";
@@ -46,7 +47,7 @@ export function ImmichPicker() {
             <div className="hrow between"><span className="sec" style={{ color: g.date === want ? "var(--accent)" : undefined }}>{g.date === want ? "The day you're filling · " : ""}{g.date ? relDay(g.date) : "Unknown date"}</span><span className="small faint">{g.items.length} {kind === "photo" ? (g.items.length === 1 ? "photo" : "photos") : g.items.length === 1 ? "video" : "videos"}</span></div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 4 }}>
               {g.items.map((a) => (
-                <button key={a.id} disabled={busy} onClick={() => pick(a)} aria-label={(a.kind === "photo" ? "Photo from " : "Video from ") + (a.date ? dayLabel(a.date) : "unknown date") + (a.kind === "video" ? ", " + a.dur + " seconds" : "") + (used.has(a.id) ? ", already used" : "")} style={{ position: "relative", aspectRatio: "1 / 1", borderRadius: 6, border: "none", padding: 0, background: "url(/api/immich/thumb/" + a.id + ") center/cover, var(--surface)", overflow: "hidden" }}>
+                <button key={a.id} disabled={busy} onClick={() => pick(a)} aria-label={(a.kind === "photo" ? "Photo from " : "Video from ") + (a.date ? dayLabel(a.date) : "unknown date") + (a.kind === "video" ? ", " + a.dur + " seconds" : "") + (used.has(a.id) ? ", already used" : "")} style={{ position: "relative", aspectRatio: "1 / 1", borderRadius: 6, border: "none", padding: 0, background: "url(" + fileUrl("/api/immich/thumb/" + a.id) + ") center/cover, var(--surface)", overflow: "hidden" }}>
                   {a.kind === "video" ? <span style={{ position: "absolute", right: 5, bottom: 5, padding: "1px 5px", borderRadius: 5, background: "rgba(0,0,0,0.5)", fontSize: 10.5, fontWeight: 700, color: "#F2EFE9" }}>{Math.floor(a.dur / 60)}:{String(a.dur % 60).padStart(2, "0")}</span> : null}
                   {a.orient !== "portrait" ? <span style={{ position: "absolute", left: 5, bottom: 6, width: a.orient === "landscape" ? 14 : 10, height: 10, borderRadius: 2, border: "1.5px solid rgba(255,255,255,0.85)" }} /> : null}
                   {used.has(a.id) ? <span className="hrow gap4" style={{ position: "absolute", left: 5, top: 5, padding: "1px 6px", borderRadius: 5, background: "rgba(0,0,0,0.55)", fontSize: 10, fontWeight: 700, color: "var(--accent)" }}><Icon name="check" size={10} stroke={3} />Used</span> : null}

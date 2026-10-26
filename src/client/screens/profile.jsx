@@ -1,5 +1,6 @@
 import React from "react";
 import { useApp, post, api } from "../store.jsx";
+import { app, apiUrl, apiHeaders, signedOut } from "../platform.js";
 import { Icon } from "../icons.jsx";
 import { Screen, TopBar, Sheet, Avatar, Toggle, ToggleRow, Swatches, Confirm, TimezonePicker, detectedZone, PassInput, Strength, Opts, Choice, useDragList, move } from "../ui.jsx";
 import * as S from "../sel.js";
@@ -32,7 +33,7 @@ function AvatarSheet({ open, onClose }) {
     const w = img.w * sc * k, h = img.h * sc * k;
     g.drawImage(img.el, (256 - w) / 2 + off.x * k, (256 - h) / 2 + off.y * k, w, h);
     c.toBlob(async (blob) => {
-      try { await fetch("/api/upload/avatar", { method: "POST", body: blob, headers: { "Content-Type": "image/jpeg" } }).then((r) => { if (!r.ok) throw new Error(); }); await refresh(); toast("Profile photo updated"); }
+      try { await fetch(apiUrl("/api/upload/avatar"), { method: "POST", body: blob, headers: Object.assign({ "Content-Type": "image/jpeg" }, apiHeaders()) }).then((r) => { if (!r.ok) throw new Error(); }); await refresh(); toast("Profile photo updated"); }
       catch (e) { toast("Couldn't save that photo. Try again.", null, "warn"); }
       onClose();
     }, "image/jpeg", 0.85);
@@ -161,7 +162,7 @@ export function Profile({ params }) {
             <div className="hrow between gap12" style={{ padding: 14, borderRadius: 12, background: "var(--surface)", border: "1px solid var(--line)" }}>
               <span className="hrow gap12" style={{ minWidth: 0 }}><span style={{ width: 34, height: 34, borderRadius: 10, background: me.sso ? "var(--accent-soft)" : "#232220", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Icon name="key" size={16} color={me.sso ? "var(--accent)" : "var(--muted)"} /></span><span className="stack gap2" style={{ minWidth: 0 }}><span style={{ fontSize: 14, fontWeight: 600 }}>Single sign-on</span><span className="small muted ellipsis">{me.sso ? "Linked · " + me.email : "Not linked yet"}</span></span></span>
               <button className="chipbtn" onClick={() => {
-                if (!me.sso) { window.location.href = "/api/auth/oidc/start?link=1"; return; }
+                if (!me.sso) { if (app) { toast("Link your SSO account from Glimpse in a web browser, then sign in here with it", null, "warn"); return; } window.location.href = "/api/auth/oidc/start?link=1"; return; }
                 if (!sso.passwordLogin) { toast("This server only uses SSO, so unlinking would lock you out", null, "warn"); return; }
                 setUnlink(true);
               }}>{me.sso ? "Unlink" : "Link"}</button>
@@ -227,7 +228,13 @@ export function Profile({ params }) {
         </div>
 
         <div className="sec" style={{ marginTop: 30, marginBottom: 10 }}>Session</div>
-        <button className="btn outline" onClick={async () => { let r = null; try { r = await post("/api/auth/logout"); } catch (e) { /* offline */ } if (r && r.redirect) { window.location.href = r.redirect; return; } await refresh(); nav.reset("login"); }}><Icon name="logout" size={16} />Log out</button>
+        {app ? (
+          <div className="hrow between gap12" style={{ padding: 14, borderRadius: 12, background: "var(--surface)", border: "1px solid var(--line)", marginBottom: 10 }}>
+            <span className="stack gap2" style={{ minWidth: 0 }}><span style={{ fontSize: 14, fontWeight: 600 }}>Server</span><span className="small muted ellipsis">{app.server.replace(/^https?:\/\//, "")}</span></span>
+            <button className="chipbtn" onClick={async () => { try { await post("/api/auth/logout"); } catch (e) { /* offline */ } await app.forgetServer(); window.location.replace("/"); }}>Change</button>
+          </div>
+        ) : null}
+        <button className="btn outline" onClick={async () => { let r = null; try { r = await post("/api/auth/logout"); } catch (e) { /* offline */ } signedOut(); if (r && r.redirect && !app) { window.location.href = r.redirect; return; } await refresh(); nav.reset("login"); }}><Icon name="logout" size={16} />Log out</button>
         <button className="btn danger-ghost" style={{ marginTop: 8, fontSize: 13 }} onClick={() => setDelOpen(true)}>Delete account</button>
         <div style={{ height: 28 }} />
       </div>

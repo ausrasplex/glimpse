@@ -46,5 +46,7 @@ async function photoDay(file) {
 
 /** The filmed day ("YYYY-MM-DD") or null. Never throws. */
 export async function filmedDay(file, kind) {
+  // From the app's gallery or camera: the phone already knows when it was taken.
+  if (file && file.uri && file.taken) { const d = new Date(file.taken); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
   try { return kind === "photo" ? await photoDay(file) : await videoDay(file); } catch (e) { return null; }
 }

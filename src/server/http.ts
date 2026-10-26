@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { HttpError } from "./core";
-import { currentSession } from "./session";
+import { currentSession, fileSession } from "./session";
 
 export function json(data: unknown, status = 200) {
   return NextResponse.json(data, { status, headers: { "Cache-Control": "no-store" } });
@@ -22,6 +22,11 @@ export async function requireUser() {
   if (!s) throw new HttpError(401, "Please sign in again.");
   return s;
 }
+export async function requireFileUser(req: Request) {
+  const s = await fileSession(req);
+  if (!s) throw new HttpError(401, "Please sign in again.");
+  return s;
+}
 export async function requireAdmin() {
   const s = await requireUser();
   if (s.user.role !== "ADMIN") throw new HttpError(403, "Only admins can do that.");
@@ -29,9 +34,10 @@ export async function requireAdmin() {
 }
 
 // Same-origin check for state-changing requests (cookies are SameSite=Lax as well).
+export const APP_ORIGINS = ["http://localhost", "https://localhost", "capacitor://localhost"];
 export function checkOrigin(req: Request) {
   const o = req.headers.get("origin");
-  if (!o) return;
+  if (!o || APP_ORIGINS.includes(o)) return;
   const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
   let appHost = "";
   try { appHost = new URL(process.env.APP_URL || "http://x").host; } catch { appHost = ""; }

@@ -184,6 +184,10 @@ textarea.input { resize: none; line-height: 1.45; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { transform: translateY(40px); opacity: 0.6; } }
 @keyframes pop { from { transform: scale(0.96); opacity: 0; } }
+.from-right { animation: from-right 0.22s ease-out; }
+.from-left { animation: from-left 0.22s ease-out; }
+@keyframes from-right { from { transform: translateX(30%); opacity: 0; } }
+@keyframes from-left { from { transform: translateX(-30%); opacity: 0; } }
 
 /* Toast */
 .toast { position: absolute; left: 16px; right: 16px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); z-index: 60; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: #2A2825; border: 1px solid var(--line-strong); box-shadow: 0 12px 28px rgba(0,0,0,0.5); font-size: 13.5px; animation: rise 0.2s ease-out; }
@@ -238,5 +242,5 @@ textarea.input { resize: none; line-height: 1.45; }
 @media (prefers-reduced-motion: reduce) {
   .drift-col { animation: none; }
   .gl-shimmer::after { display: none; }
-  .gl-glow, .screen-enter, .sheet, .dialog, .toast, .overlay .scrim { animation: none; }
+  .gl-glow, .screen-enter, .sheet, .dialog, .toast, .overlay .scrim, .from-right, .from-left { animation: none; }
 }

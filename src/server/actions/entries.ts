@@ -6,6 +6,7 @@ import { str, num, bool } from "../http";
 import { isDayKey, dayKeyInTz, addDays } from "../../shared/dates";
 import { enqueue } from "../queue";
 import { clipMaxOf } from "../../shared/media";
+import { gcMedia } from "./projects";
 import type { Action } from "./types";
 
 const MOTIONS = ["in", "out", "pan", "still"];
@@ -15,6 +16,19 @@ async function myMedia(tx: Parameters<Action>[0]["db"], mediaId: string, userId:
   const m = await tx.query.media.findFirst({ where: eq(schema.media.id, mediaId) });
   if (!m || m.ownerId !== userId) fail(404, "That clip wasn't found.");
   return m!;
+}
+
+// The part of a new upload a glimpse plays: a photo's length and movement, or a video's trim.
+async function setClip(tx: Parameters<Action>[0]["db"], m: { id: string; kind: string }, a: Record<string, unknown>, clipLimit: Parameters<typeof clipMaxOf>[0]) {
+  if (m.kind === "photo") {
+    const len = num(a.len, 1, 5, 2);
+    const motion = MOTIONS.includes(str(a.motion, 10)) ? str(a.motion, 10) : "in";
+    await tx.update(schema.media).set({ clipStart: 0, clipEnd: len, motion }).where(eq(schema.media.id, m.id));
+  } else {
+    const start = num(a.start, 0, 36000, 0);
+    const len = num(a.len, 0.5, clipMaxOf(clipLimit), 1);
+    await tx.update(schema.media).set({ clipStart: Math.round(start * 10) / 10, clipEnd: Math.round((start + len) * 10) / 10 }).where(eq(schema.media.id, m.id));
+  }
 }
 
 // Save a new glimpse: one media item shared by every chosen project.
@@ -33,15 +47,7 @@ export const saveCapture: Action = async ({ db, user, settings }, a) => {
     const m = await myMedia(tx, mediaId, user.id);
     if (m.status === "FAILED") fail(400, "That file couldn't be processed, so it can't be saved. Choose another one.");
     for (const pid of projectIds) await requireMember(tx, pid, user.id);
-    if (m.kind === "photo") {
-      const len = num(a.len, 1, 5, 2);
-      const motion = MOTIONS.includes(str(a.motion, 10)) ? str(a.motion, 10) : "in";
-      await tx.update(schema.media).set({ clipStart: 0, clipEnd: len, motion }).where(eq(schema.media.id, m.id));
-    } else {
-      const start = num(a.start, 0, 36000, 0);
-      const len = num(a.len, 0.5, clipMaxOf(settings.clipLimit), 1);
-      await tx.update(schema.media).set({ clipStart: Math.round(start * 10) / 10, clipEnd: Math.round((start + len) * 10) / 10 }).where(eq(schema.media.id, m.id));
-    }
+    await setClip(tx, m, a, settings.clipLimit);
     const before = await snapshot(tx, projectIds, user.tz);
     for (const pid of projectIds) {
       await tx.insert(schema.entries).values({ id: id("e_"), projectId: pid, mediaId: m.id, authorId: user.id, date, note, mood: moodLabel });
@@ -58,6 +64,20 @@ export const saveCapture: Action = async ({ db, user, settings }, a) => {
       }
     }
     for (const pid of projectIds) await checkMilestones(tx, pid, before[pid], user.tz);
+  });
+};
+
+// Swap the video or photo behind your own clip, everywhere it's used. The day, note, mood and projects stay.
+export const replaceEntryMedia: Action = async ({ db, user, settings }, a) => {
+  const e = await db.query.entries.findFirst({ where: eq(schema.entries.id, str(a.entryId, 60)) });
+  if (!e || e.authorId !== user.id) fail(404, "That entry wasn't found.");
+  await db.transaction(async (tx) => {
+    const m = await myMedia(tx, str(a.mediaId, 60), user.id);
+    if (m.status === "FAILED") fail(400, "That file couldn't be processed, so it can't be used. Choose another one.");
+    if (m.id === e!.mediaId) fail(400, "That's the clip it already uses.");
+    await setClip(tx, m, a, settings.clipLimit);
+    await tx.update(schema.entries).set({ mediaId: m.id, trimStart: null, trimEnd: null }).where(and(eq(schema.entries.mediaId, e!.mediaId), eq(schema.entries.authorId, user.id)));
+    await gcMedia(tx, [e!.mediaId]);
   });
 };
 

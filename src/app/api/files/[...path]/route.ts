@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/server/db";
-import { currentSession } from "@/server/session";
+import { fileSession } from "@/server/session";
 import { streamObject, canSeeMedia, canSeeMash } from "@/server/files";
 import { sha256 } from "@/server/ids";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
   const { path } = await ctx.params;
   const url = new URL(req.url);
   const invite = url.searchParams.get("invite");
-  const s = await currentSession();
+  const s = await fileSession(req);
   const uid = s?.user.id ?? null;
   const [kind, idv, variant] = path;
 

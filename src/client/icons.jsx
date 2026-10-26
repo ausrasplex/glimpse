@@ -3,7 +3,7 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, X, Plus, Check, Camera, Bell, User, Users, UserPlus, House, Calendar, LayoutGrid,
   Clapperboard, Film, Settings, Play, Pause, Pencil, Trash2, Ellipsis, Music, Upload, Download, Eye, EyeOff, Lock, Mail, Pin,
   Archive, LogOut, AlarmClock, RotateCw, Share2, Link, Search, Trophy, SlidersVertical, Server, Database, Shield, Image,
-  Volume2, Scissors, Info, TriangleAlert, Copy, Globe, KeyRound, Repeat, Tag, Heart, Layers, GripVertical, WandSparkles, Cpu
+  Volume2, Scissors, Info, TriangleAlert, Copy, Globe, KeyRound, Repeat, Tag, Heart, Layers, GripVertical, WandSparkles, Cpu, FolderOpen
 } from "lucide-react";
 
 // App icon names → Lucide icons. Screens keep using <Icon name="…" />.
@@ -15,7 +15,7 @@ const L = {
   logout: LogOut, clock: AlarmClock, refresh: RotateCw, share: Share2, link: Link, search: Search, trophy: Trophy,
   sliders: SlidersVertical, server: Server, storage: Database, shield: Shield, image: Image, volume: Volume2, scissors: Scissors,
   info: Info, alert: TriangleAlert, copy: Copy, globe: Globe, key: KeyRound, repeat: Repeat, tag: Tag, heart: Heart,
-  layers: Layers, drag: GripVertical, wand: WandSparkles, cpu: Cpu
+  layers: Layers, drag: GripVertical, wand: WandSparkles, cpu: Cpu, folder: FolderOpen
 };
 // Solid icons: play and pause read better filled at small sizes.
 const FILLED = { play: true, pause: true };

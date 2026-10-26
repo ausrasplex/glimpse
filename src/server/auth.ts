@@ -52,8 +52,7 @@ export async function login(email: string, password: string, recovery: string | 
     await db.delete(schema.settings).where(eq(schema.settings.key, "recovery"));
   }
   await clear(failKey);
-  await createSession(user!.id, { userAgent: ua });
-  return { ok: true };
+  return { ok: true, ...(await createSession(user!.id, { userAgent: ua })) };
 }
 
 // ---------- Password reset ----------
@@ -83,7 +82,7 @@ export async function confirmReset(t: string, password: string, ua: string | nul
   await db.update(schema.passwordResets).set({ usedAt: new Date() }).where(eq(schema.passwordResets.tokenHash, row!.tokenHash));
   await db.delete(schema.sessions).where(eq(schema.sessions.userId, user!.id));
   await clear("login-lock:" + sha256(user!.email));
-  await createSession(user!.id, { userAgent: ua });
+  return createSession(user!.id, { userAgent: ua });
 }
 
 // ---------- Invites ----------
@@ -165,8 +164,7 @@ export async function signup(o: { token: string; name: string; email: string; pa
     await acceptInvite(tx, inv!, u, name);
     return u;
   });
-  await createSession(uid, { userAgent: ua });
-  return { projectId: inv!.projectId };
+  return { projectId: inv!.projectId, ...(await createSession(uid, { userAgent: ua })) };
 }
 
 // ---------- Single sign-on ----------
@@ -250,7 +248,7 @@ export async function finishSetup(o: { name: string; email: string; password: st
     if (o.sso) s.sso = { ...s.sso, on: true, issuer: o.sso.issuer, clientId: o.sso.clientId, secretEnc: encrypt(o.sso.secret), tested: true };
   });
   if (o.smtp) await db.update(schema.reminders).set({ email: true }).where(and(eq(schema.reminders.userId, uid), eq(schema.reminders.time, "08:00")));
-  await createSession(uid, { userAgent: ua });
+  return createSession(uid, { userAgent: ua });
 }
 
 export async function lastAdminGuard(userIds: string[]) {

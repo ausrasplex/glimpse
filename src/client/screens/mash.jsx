@@ -3,6 +3,7 @@ import { useApp, live } from "../store.jsx";
 import { Icon } from "../icons.jsx";
 import { Screen, TopBar, Steps, Sheet, Thumb, ClipView, PlayBadge, Menu, Choice, Opts, Toggle, ToggleRow, Stepper, Section, Confirm, useDragList, move } from "../ui.jsx";
 import * as S from "../sel.js";
+import { download, haptic } from "../platform.js";
 import { QUALITY, OUTPUT, stampDate as shStampDate, stampLines as shStampLines } from "../../shared/mash";
 import { STAMP_DEFAULT, LABEL_DEFAULT, cleanStamp, cleanLabel, matched, labelText } from "../../shared/textstyle";
 import { TextPreview, TextStyleControls, FontPicker } from "./textstyle.jsx";
@@ -445,6 +446,7 @@ export function MashStep3() {
         settings: { shape: d.shape, fill: d.fill, clipMode: d.clipMode, cap: d.cap, stamp: d.stamp, label: d.label, tracks: d.tracks, crossfade: d.crossfade, whenEnds: d.whenEnds, audio: d.audio, level: d.level, sync: d.sync, beats: d.beats, stretch: d.stretch !== false, musicLabel: d.musicLabel !== false, quality: d.quality }
       });
     } catch (e) { setRendering(false); return; }
+    haptic("success");
     toast("Rendering “" + (title.trim() || defaultTitle(db, d)) + "”. We'll let you know when it's ready.");
     setMashDraft(null);
     nav.reset("mash");
@@ -832,7 +834,7 @@ export function MashPlayer({ params }) {
         </div>
         {mine ? (
           <div className="pad grid4" style={{ paddingTop: 18, gap: 8 }}>
-            {[{ l: "Download", i: "download", f: () => { if (ready) window.location.href = m.src + "?download=1"; else toast("You can download it once it's rendered"); } }, { l: "Re-mash", i: "refresh", f: () => { setMashDraft(null); nav.go("mash1", { remashOf: m.id }); } }, { l: "Rename", i: "edit", f: () => { setRenaming(true); setConfirm(false); } }, { l: "Delete", i: "trash", f: () => { setConfirm(true); setRenaming(false); }, d: true }].map((a) => (
+            {[{ l: "Download", i: "download", f: () => { if (ready) download(m.src + (m.src.indexOf("?") >= 0 ? "&" : "?") + "download=1"); else toast("You can download it once it's rendered"); } }, { l: "Re-mash", i: "refresh", f: () => { setMashDraft(null); nav.go("mash1", { remashOf: m.id }); } }, { l: "Rename", i: "edit", f: () => { setRenaming(true); setConfirm(false); } }, { l: "Delete", i: "trash", f: () => { setConfirm(true); setRenaming(false); }, d: true }].map((a) => (
               <button key={a.l} onClick={a.f} className="stack gap6" style={{ alignItems: "center", padding: "12px 0", borderRadius: 14, background: "var(--surface)", border: "1px solid " + (a.l === "Rename" && renaming ? "var(--accent)" : "var(--line)"), color: a.d ? "var(--danger)" : "var(--fg)", fontSize: 12, fontWeight: 600 }}><Icon name={a.i} size={18} color={a.d ? "var(--danger)" : "#BDB7AD"} />{a.l}</button>
             ))}
           </div>

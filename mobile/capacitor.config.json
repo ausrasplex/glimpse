@@ -1,0 +1,17 @@
+{
+  "appId": "app.glimpse.mobile",
+  "appName": "Glimpse",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "http"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#121212"
+  },
+  "plugins": {
+    "SystemBars": {
+      "style": "DARK"
+    }
+  }
+}
