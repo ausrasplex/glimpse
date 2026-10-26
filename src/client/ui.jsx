@@ -277,6 +277,8 @@ export function Thumb({ m, className, style, children, label }) {
 }
 
 // Plays the chosen section of a clip. Real videos loop the section; sample clips show a gentle "playing" sweep.
+// Android's WebView draws a big grey play button over a video that has no poster; a clear one keeps the thumbnail behind it.
+export const NO_POSTER = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 export function ClipView({ m, start, end, playing, onEnded, loop, style, children, fit, muted }) {
   const ref = useRef(null);
   const url = m ? m.liveUrl || (m.liveId ? live.video[m.liveId] : null) || m.src || null : null;
@@ -323,7 +325,7 @@ export function ClipView({ m, start, end, playing, onEnded, loop, style, childre
   }
   return (
     <div className="thumb" style={Object.assign({ background: m ? (m.thumb ? "url(" + m.thumb + ") center/cover, " + m.grad : m.grad) : "#222" }, style)}>
-      {url ? <video ref={ref} src={url} muted={!!muted} playsInline onTimeUpdate={onTime} style={{ objectFit: fit || "cover" }} /> : null}
+      {url ? <video ref={ref} src={url} poster={m.thumb || NO_POSTER} muted={!!muted} playsInline onTimeUpdate={onTime} style={{ objectFit: fit || "cover" }} /> : null}
       {!url && playing ? <div style={{ position: "absolute", left: 0, bottom: 0, height: 3, width: (t * 100) + "%", background: "rgba(255,255,255,0.75)" }} /> : null}
       {!url && playing ? <div style={{ position: "absolute", inset: 0, background: "linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.10) 50%, transparent 70%)", backgroundSize: "200% 100%", backgroundPosition: (100 - t * 200) + "% 0" }} /> : null}
       {children}

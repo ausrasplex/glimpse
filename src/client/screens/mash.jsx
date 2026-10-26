@@ -1,7 +1,7 @@
 import React from "react";
 import { useApp, live } from "../store.jsx";
 import { Icon } from "../icons.jsx";
-import { Screen, TopBar, Steps, Sheet, Thumb, ClipView, PlayBadge, Menu, Choice, Opts, Toggle, ToggleRow, Stepper, Section, Confirm, useDragList, move } from "../ui.jsx";
+import { Screen, TopBar, Steps, Sheet, Thumb, ClipView, NO_POSTER, PlayBadge, Menu, Choice, Opts, Toggle, ToggleRow, Stepper, Section, Confirm, useDragList, move } from "../ui.jsx";
 import * as S from "../sel.js";
 import { download, haptic } from "../platform.js";
 import { QUALITY, OUTPUT, stampDate as shStampDate, stampLines as shStampLines } from "../../shared/mash";
@@ -768,7 +768,7 @@ export function MashPlayer({ params }) {
           <div style={{ position: "relative", width: box.w, height: box.h, maxWidth: "calc(100% - 40px)", borderRadius: 18, overflow: "hidden", background: "#000", opacity: renaming ? 0.45 : 1 }}>
             {ready ? (
               <>
-                <video ref={vref} src={m.src} poster={m.poster || undefined} playsInline preload="metadata" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} onTimeUpdate={(e) => setT(e.currentTarget.currentTime)} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+                <video ref={vref} src={m.src} poster={m.poster || NO_POSTER} playsInline preload="metadata" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} onTimeUpdate={(e) => setT(e.currentTarget.currentTime)} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
                 <button aria-label={playing ? "Pause" : "Play"} onClick={() => (playing ? vref.current && vref.current.pause() : play())} style={{ position: "absolute", inset: 0, background: "transparent", border: "none" }}>
                   {!playing ? <span style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: 60, height: 60, borderRadius: "50%", background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", color: "#F2EFE9" }}><Icon name="play" size={22} /></span> : null}
                 </button>

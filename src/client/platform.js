@@ -38,6 +38,21 @@ export const phone = app && app.media ? app.media : null;
 // A link the page can show or play: a phone file through the app, a picked File through an object URL.
 export const localUrl = (f) => (f && f.uri && app ? app.localUrl(f.uri) : URL.createObjectURL(f));
 
+// Copy text. The app uses the phone's clipboard (Android's WebView doesn't allow the browser one); browsers try the
+// clipboard API, then the older copy command, which still works after waiting on the server. Resolves to true if copied.
+export async function copyText(text) {
+  if (app && app.copy) { try { await app.copy(text); return true; } catch (e) { return false; } }
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch (e) { /* try the old way */ }
+  try {
+    const t = document.createElement("textarea");
+    t.value = text; t.setAttribute("readonly", ""); t.style.position = "fixed"; t.style.opacity = "0";
+    document.body.appendChild(t); t.select();
+    const ok = document.execCommand("copy");
+    t.remove();
+    return ok;
+  } catch (e) { return false; }
+}
+
 // A small buzz on the phone ("tap" or "success"); nothing in a browser.
 export const haptic = (kind) => { if (app && app.haptic) app.haptic(kind); };
 

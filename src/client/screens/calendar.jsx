@@ -425,13 +425,11 @@ export function EntryDetail({ params }) {
             </div>
           ) : <span className="small faint" style={{ lineHeight: 1.45 }}>Only {S.firstName(author)} or the project owner can change this clip.</span>}
           {!mine && owner ? <span className="small faint" style={{ lineHeight: 1.45 }}>Owner tools apply to {p.name} only. {S.firstName(author)}'s original clip and other projects aren't touched. The note and mood can only be edited by {S.firstName(author)}.</span> : null}
-          <button className="btn dashed" onClick={addToDay}><Icon name="plus" size={15} stroke={2.4} />Add another clip to this day</button>
-          {mine || owner ? (
-            <div className="stack gap4">
-              <button className="btn danger-ghost sm" onClick={removeHere}><Icon name="trash" size={15} />{siblings.length > 1 || !mine ? "Remove from " + p.name + " only" : "Delete this entry"}</button>
-              {mine && siblings.length > 1 ? <button className="btn danger-ghost sm" onClick={() => setSheet("delete")}><Icon name="trash" size={15} />Delete everywhere</button> : null}
-            </div>
-          ) : null}
+          <div className={mine || owner ? "grid2" : ""}>
+            <button className="btn dashed" onClick={addToDay} aria-label="Add another clip to this day"><Icon name="plus" size={15} stroke={2.4} />Add a clip</button>
+            {mine || owner ? <button className="btn danger-ghost" onClick={removeHere} aria-label={siblings.length > 1 || !mine ? "Remove from " + p.name + " only" : "Delete this entry"} style={{ padding: 12, fontSize: 13.5, border: "1.5px solid rgba(224,120,110,0.4)" }}><Icon name="trash" size={15} />{siblings.length > 1 || !mine ? "Remove here" : "Delete"}</button> : null}
+          </div>
+          {mine && siblings.length > 1 ? <button className="btn danger-ghost sm" onClick={() => setSheet("delete")}><Icon name="trash" size={15} />Delete everywhere</button> : null}
           <div style={{ height: 20 }} />
         </div>
       </div>

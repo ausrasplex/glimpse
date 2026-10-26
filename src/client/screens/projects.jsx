@@ -1,5 +1,6 @@
 import React from "react";
 import { useApp } from "../store.jsx";
+import { copyText } from "../platform.js";
 import { Icon } from "../icons.jsx";
 import { Screen, TopBar, Sheet, Thumb, Avatar, AvatarStack, Menu, Confirm, Choice, Swatches, DateSheet, PlayBadge, ClipView } from "../ui.jsx";
 import { EntryEditSheet } from "./calendar.jsx";
@@ -522,7 +523,7 @@ export function Members({ params }) {
                   </div>
                   {open ? (
                     <div style={{ margin: "0 12px 12px" }}>
-                      <Menu items={isPending ? [admin && m.inviteId ? { label: "Copy invite link", icon: "copy", onClick: () => { setMenu(null); act("inviteLink", { inviteId: m.inviteId }, { noRefresh: true }).then((r) => { try { navigator.clipboard.writeText(r.link).then(() => toast("Invite link copied"), () => setLinkShown(r.link)); } catch (e) { setLinkShown(r.link); } }).catch(() => {}); } } : null, { label: "Cancel invite", icon: "close", danger: true, onClick: () => { setMenu(null); act("cancelProjectInvite", { projectId: pid, memberId: m.id }).then(() => toast("Invite cancelled")).catch(() => {}); } }]
+                      <Menu items={isPending ? [admin && m.inviteId ? { label: "Copy invite link", icon: "copy", onClick: () => { setMenu(null); act("inviteLink", { inviteId: m.inviteId }, { noRefresh: true }).then((r) => copyText(r.link).then((ok) => { if (ok) toast("Invite link copied"); else setLinkShown(r.link); })).catch(() => {}); } } : null, { label: "Cancel invite", icon: "close", danger: true, onClick: () => { setMenu(null); act("cancelProjectInvite", { projectId: pid, memberId: m.id }).then(() => toast("Invite cancelled")).catch(() => {}); } }]
                         : [{ label: "Make owner", icon: "key", onClick: () => { setMenu(null); setSheet({ type: "transfer", userId: m.userId }); } }, { label: "Remove from project", icon: "trash", danger: true, onClick: () => { setMenu(null); setRemoveChoice("keep"); setSheet({ type: "remove", userId: m.userId }); } }]} />
                     </div>
                   ) : null}

@@ -4,6 +4,7 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { Browser } from "@capacitor/browser";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
+import { Clipboard } from "@capacitor/clipboard";
 import { Preferences } from "@capacitor/preferences";
 import { SecureStorage } from "@aparajita/capacitor-secure-storage";
 
@@ -57,6 +58,7 @@ const g = {
     await Browser.open({ url: this.server + path + (path.indexOf("?") >= 0 ? "&" : "?") + "app=1&challenge=" + ch });
   },
   download(url) { Browser.open({ url }); },
+  copy(text) { return Clipboard.write({ string: text }); },
   // A small buzz: "tap" for picking something, "success" when it's saved.
   haptic(kind) {
     if (!Capacitor.isNativePlatform()) return;

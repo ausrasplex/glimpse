@@ -1,5 +1,6 @@
 import React from "react";
 import { useApp } from "../store.jsx";
+import { copyText } from "../platform.js";
 import { Icon, Logo } from "../icons.jsx";
 import { Screen, Avatar, Toggle, ToggleRow, Opts, Choice, Stepper, Menu, Confirm, Dialog, TimezonePicker, detectedZone, zoneLabel } from "../ui.jsx";
 import * as S from "../sel.js";
@@ -41,7 +42,7 @@ export function CopyBox({ url, note }) {
       <span style={{ fontSize: 12.5, fontFamily: "ui-monospace, Menlo, monospace", wordBreak: "break-all", userSelect: "all" }}>{url}</span>
       <div className="hrow between gap8 wrap">
         <span className="small muted">{note}</span>
-        <button className="chipbtn" style={{ background: "var(--accent)", color: "var(--accent-ink)", border: "none", fontWeight: 700 }} onClick={() => { try { navigator.clipboard.writeText(url).then(() => setCopied(true), () => toast("Select the link and copy it")); } catch (e) { toast("Select the link and copy it"); } }}>{copied ? "Copied" : "Copy"}</button>
+        <button className="chipbtn" style={{ background: "var(--accent)", color: "var(--accent-ink)", border: "none", fontWeight: 700 }} onClick={() => copyText(url).then((ok) => { if (ok) setCopied(true); else toast("Select the link and copy it"); })}>{copied ? "Copied" : "Copy"}</button>
       </div>
     </div>
   );
@@ -128,7 +129,7 @@ function People() {
               </div>
               {open ? <div style={{ margin: "0 8px 8px" }}><Menu items={[
                 iv.status === "needs" ? { label: "Approve & send invite", icon: "check", onClick: () => { setInvMenu(null); act("approveInvite", { inviteId: iv.id }).then((r) => { if (r && r.link) setLink(r.link); toast(r && r.emailed ? "Approved. Invite email sent to " + iv.email : "Approved. Email isn't set up, so copy the link below and send it"); }).catch(() => {}); } } : null,
-                iv.status === "pending" ? { label: "Copy link", icon: "copy", onClick: () => { setInvMenu(null); act("inviteLink", { inviteId: iv.id }, { noRefresh: true }).then((r) => setLink(r.link)).catch(() => {}); } } : null,
+                iv.status === "pending" ? { label: "Copy link", icon: "copy", onClick: () => { setInvMenu(null); act("inviteLink", { inviteId: iv.id }, { noRefresh: true }).then((r) => { setLink(r.link); copyText(r.link).then((ok) => toast(ok ? "Invite link copied" : "Copy the link below and send it")); }).catch(() => {}); } } : null,
                 { label: iv.status === "needs" ? "Decline request" : "Revoke invite", icon: "close", danger: true, onClick: () => { setInvMenu(null); act("revokeInvite", { inviteId: iv.id }).then(() => toast(iv.status === "needs" ? "Request declined" : "Invite revoked")).catch(() => {}); } }
               ]} /></div> : null}
             </div>
@@ -169,7 +170,7 @@ function SignIn() {
         <>
           <Inset style={{ gap: 6 }}>
             <span className="sec">Redirect URL for your provider</span>
-            <div className="hrow gap8"><span style={{ flex: 1, minWidth: 0, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12, color: "#BDB7AD", wordBreak: "break-all" }}>{callback}</span><button className="chipbtn" aria-label="Copy redirect URL" onClick={() => { try { navigator.clipboard.writeText(callback); } catch (e) { /* ignore */ } toast("Redirect URL copied"); }}><Icon name="copy" size={14} /></button></div>
+            <div className="hrow gap8"><span style={{ flex: 1, minWidth: 0, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12, color: "#BDB7AD", wordBreak: "break-all" }}>{callback}</span><button className="chipbtn" aria-label="Copy redirect URL" onClick={() => copyText(callback).then((ok) => toast(ok ? "Redirect URL copied" : "Select the URL and copy it"))}><Icon name="copy" size={14} /></button></div>
           </Inset>
           {locked ? <span className="small muted" style={{ lineHeight: 1.45 }}>Issuer, client ID and secret come from the container's <code>OIDC_ISSUER</code>, <code>OIDC_CLIENT_ID</code> and <code>OIDC_CLIENT_SECRET</code> settings.</span> : null}
           <div className="field"><label className="sec" htmlFor="sso-issuer">Issuer URL</label><input id="sso-issuer" disabled={locked} className="input" style={inStyle} placeholder="https://auth.yourdomain.com/application/o/glimpse/" value={sso.issuer} onChange={(e) => edit({ issuer: e.target.value.trim() })} /></div>
