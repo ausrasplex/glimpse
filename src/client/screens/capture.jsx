@@ -324,30 +324,41 @@ export function Trim({ params }) {
     const key = uid("v");
     live.video[key] = url;
     const base = keep(draft || {});
-    const v = document.createElement("video");
-    v.preload = "metadata"; v.muted = true; v.src = url;
-    let settled = false;
     const job = startUpload(key, f, type || f.type, setDraft);
     job.promise.then(() => refresh(), () => {});
-    let hint = null;
-    filmedDay(f, "video").then((day) => { hint = day; if (day) setDraft((cur) => (cur && cur.liveId === key ? Object.assign({}, cur, { filmedHint: day }) : cur)); });
-    v.onloadedmetadata = () => {
-      if (settled) return; settled = true;
-      const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
-      if (!dur || !v.videoWidth) { v.onerror(); return; }
-      setDraft(Object.assign({}, base, { source: "file", liveId: key, kind: "video", grad: GRADS[Math.floor(Math.random() * GRADS.length)], duration: +dur.toFixed(1), start: +Math.min(dur * 0.2, Math.max(0, dur - 1)).toFixed(1), len: Math.min(1, dur), size: f.size, fileName: f.name, orient: orientOf(v.videoWidth, v.videoHeight), uploadPct: job.pct, uploadId: job.uploadId, mediaId: job.mediaId, bg: !!f.uri, filmedHint: hint }));
+    // Straight away: the upload has started, and the video opens for trimming as soon as its length is known.
+    setDraft(Object.assign({}, base, { source: "opening", liveId: key, kind: "video", fileName: f.name, size: f.size, uploadPct: job.pct, uploadId: job.uploadId, mediaId: job.mediaId, bg: !!f.uri }));
+    const mine = (o) => setDraft((cur) => (cur && cur.liveId === key ? Object.assign({}, cur, o) : cur));
+    filmedDay(f, "video").then((day) => { if (day) mine({ filmedHint: day }); });
+    let settled = false;
+    const ready = (dur, w, h) => {
+      settled = true;
+      mine({ source: "file", grad: GRADS[Math.floor(Math.random() * GRADS.length)], duration: +dur.toFixed(1), start: +Math.min(dur * 0.2, Math.max(0, dur - 1)).toFixed(1), len: Math.min(1, dur), orient: orientOf(w, h) });
     };
     // The browser can't decode it (often iPhone HEVC): trim once the server has made a playback copy.
-    v.onerror = () => {
+    const viaServer = () => {
       settled = true;
       delete live.video[key];
-      setDraft(Object.assign({}, base, { source: "server", liveId: key, kind: "video", fileName: f.name, size: f.size, uploadPct: job.pct, uploadId: job.uploadId, mediaId: job.mediaId, bg: !!f.uri, filmedHint: hint }));
+      setDraft((cur) => (cur && cur.liveId === key && cur.source !== "server" ? Object.assign({}, cur, { source: "server", duration: undefined }) : cur));
     };
+    // From the phone's gallery: its length and shape are already known, so trimming opens at once.
+    if (f.uri && f.duration > 0 && f.width && f.height) ready(f.duration, f.width, f.height);
+    const v = document.createElement("video");
+    v.preload = "metadata"; v.muted = true; v.src = url;
+    v.onloadedmetadata = () => {
+      const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 0;
+      if (!dur || !v.videoWidth) { viaServer(); return; }
+      if (!settled) ready(dur, v.videoWidth, v.videoHeight);
+    };
+    v.onerror = viaServer;
+    // Still nothing after a while (a huge file the browser is slow to read): let the server prepare it.
+    setTimeout(() => { if (!settled) viaServer(); }, 20000);
   };
   const onPhoto = async (f, type) => {
     abandon(draft);
     const key = uid("p");
     const base = keep(draft || {});
+    setDraft(Object.assign({}, base, { source: "opening", liveId: key, kind: "photo", fileName: f.name, size: f.size, bg: !!f.uri }));
     const ph = await loadPhoto(f);
     const job = startUpload(key, f, type || f.type, setDraft);
     job.promise.then(() => refresh(), () => {});
@@ -370,6 +381,20 @@ export function Trim({ params }) {
   if (!d.source && editing) return <Screen />;
   // Glimpses are added from a project, so a new one without a project goes to the project list.
   if (!editing && !d.presetProjectId && !(d.projectIds && d.projectIds.length)) return <Redirect to="projects" />;
+  if (d.source === "opening") {
+    return (
+      <Screen>
+        <TopBar title={d.kind === "photo" ? "Photo glimpse" : "Pick the moment"} sub={sub} icon="close" backLabel={cancelLabel} onBack={cancel} />
+        {!replacing ? <Steps n={1} of={2} /> : null}
+        <div className="stack gap10" style={{ padding: "60px 24px", alignItems: "center", textAlign: "center" }}>
+          <span className="spin" style={{ width: 34, height: 34, borderRadius: "50%", border: "3px solid var(--line)", borderTopColor: "var(--accent)" }} />
+          <span style={{ fontSize: 17, fontWeight: 700, marginTop: 8 }}>Opening your {d.kind === "photo" ? "photo" : "video"}</span>
+          <span className="muted ellipsis" style={{ fontSize: 13, maxWidth: 280 }}>{d.fileName || ""}</span>
+          {d.uploadPct != null && d.uploadPct > 0 ? <span className="small faint">Uploading · {Math.round(d.uploadPct * 100)}%</span> : <span className="small faint">The upload has started.</span>}
+        </div>
+      </Screen>
+    );
+  }
   if (waiting) {
     return (
       <Screen>

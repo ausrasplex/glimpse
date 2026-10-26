@@ -183,6 +183,8 @@ textarea.input { resize: none; line-height: 1.45; }
 .dialog { position: relative; width: 100%; border-radius: 20px; background: var(--surface-2); border: 1px solid var(--line); padding: 20px; display: flex; flex-direction: column; gap: 14px; animation: pop 0.16s ease-out; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { transform: translateY(40px); opacity: 0.6; } }
+.spin { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pop { from { transform: scale(0.96); opacity: 0; } }
 .from-right { animation: from-right 0.22s ease-out; }
 .from-left { animation: from-left 0.22s ease-out; }

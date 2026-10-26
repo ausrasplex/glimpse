@@ -265,7 +265,7 @@ export function EntryEditSheet({ entry, open, onClose }) {
 function neighbours(db, e) {
   const all = S.projectEntries(db, e.projectId).slice().sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : x.createdAt - y.createdAt));
   const i = all.findIndex((x) => x.id === e.id);
-  return { prev: i > 0 ? all[i - 1] : null, next: i >= 0 && i < all.length - 1 ? all[i + 1] : null };
+  return { prev: i > 0 ? all[i - 1] : null, next: i >= 0 && i < all.length - 1 ? all[i + 1] : null, at: i + 1, of: all.length };
 }
 
 // A sideways swipe: left for the next day, right for the day before. Up and down still scroll.
@@ -291,7 +291,7 @@ function useSwipe(onPrev, onNext) {
 
 const AR = { portrait: 9 / 16, landscape: 16 / 9, square: 1 };
 
-// Full-screen playback with the day and note on the clip, like a mash. Swipe (or use the arrows) for other days.
+// Full-screen playback with the day and note on the clip, like a mash. Each clip loops until you move on or tap to pause. Swipe (or the arrow keys) for other days.
 function Player({ entryId, onClose }) {
   const { db } = useApp();
   const [id, setId] = useState(entryId);
@@ -300,7 +300,7 @@ function Player({ entryId, onClose }) {
   const area = useRef(null);
   const [room, setRoom] = useState({ w: 390, h: 760 });
   const e = S.entry(db, id) || S.entry(db, entryId);
-  const { prev, next } = neighbours(db, e);
+  const { prev, next, at, of } = neighbours(db, e);
   const go = (x, d) => { if (!x) return; setDir(d); setId(x.id); setPlaying(true); };
   const close = () => onClose(e.id);
   const swipe = useSwipe(() => go(prev, -1), () => go(next, 1));
@@ -325,27 +325,31 @@ function Player({ entryId, onClose }) {
   const ar = AR[c.m.orient] || AR.portrait;
   const w = Math.min(room.w, Math.round(room.h * ar)), h = Math.round(w / ar);
   const short = Math.min(w, h);
-  const fs = Math.max(13, Math.min(22, Math.round(short * 0.045)));
+  const fs = Math.max(13, Math.min(20, Math.round(short * 0.042)));
   const day = stampDate(e.date, "short") + (e.date.slice(0, 4) !== todayKey().slice(0, 4) ? " " + e.date.slice(0, 4) : "");
-  const pill = { padding: Math.round(fs * 0.35) + "px " + Math.round(fs * 0.6) + "px", borderRadius: Math.round(fs * 0.45), background: "rgba(0,0,0,0.45)", color: "#FFFFFF", fontSize: fs, fontWeight: 600, lineHeight: 1.3 };
   const edge = Math.round(short * 0.045);
-  const side = (label, icon, x, d, pos) => x ? <button className="iconbtn" aria-label={label} onClick={() => go(x, d)} style={Object.assign({ position: "absolute", top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.4)", zIndex: 2 }, pos)}><Icon name={icon} size={18} /></button> : null;
   return (
     <div role="dialog" aria-label={"Playing " + fullDay(e.date)} style={{ position: "absolute", inset: 0, zIndex: 50, background: "#000", display: "flex", flexDirection: "column", animation: "fade 0.15s ease-out" }}>
+      <div className="hrow between" style={{ padding: "14px 16px 10px", flexShrink: 0 }}>
+        <button className="iconbtn" aria-label="Close" onClick={close} style={{ border: "1px solid var(--line)" }}><Icon name="chevD" size={18} stroke={2.2} /></button>
+        <span className="small muted num">{of > 1 ? at + " of " + of : ""}</span>
+        <span style={{ width: 36 }} />
+      </div>
       <div ref={area} {...swipe} style={Object.assign({ position: "relative", flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }, swipe.style)}>
         <div key={e.id} className={dir > 0 ? "from-right" : dir < 0 ? "from-left" : ""} style={{ position: "relative", width: w, height: h }}>
-          <ClipView m={c.m} start={c.start} end={c.end} playing={playing} loop={false} onEnded={() => setPlaying(false)} style={{ position: "absolute", inset: 0, borderRadius: 0 }}>
-            <span style={Object.assign({ position: "absolute", top: edge, right: edge }, pill)}>{day}</span>
-            {e.note ? <span style={Object.assign({ position: "absolute", left: edge, bottom: edge, maxWidth: "78%", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }, pill)}>{e.note}</span> : null}
+          <ClipView m={c.m} start={c.start} end={c.end} playing={playing} loop style={{ position: "absolute", inset: 0, borderRadius: 0 }}>
+            {/* The day and the note together, in one box at the bottom. */}
+            <span className="stack" style={{ position: "absolute", left: edge, bottom: edge, maxWidth: "82%", gap: Math.round(fs * 0.2), padding: Math.round(fs * 0.5) + "px " + Math.round(fs * 0.7) + "px", borderRadius: Math.round(fs * 0.55), background: "rgba(0,0,0,0.5)", color: "#FFFFFF", lineHeight: 1.3, pointerEvents: "none" }}>
+              <span style={{ fontSize: Math.round(fs * 0.8), fontWeight: 700, letterSpacing: "0.02em", opacity: e.note ? 0.85 : 1 }}>{day}</span>
+              {e.note ? <span style={{ fontSize: fs, fontWeight: 600, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{e.note}</span> : null}
+            </span>
           </ClipView>
-          <button aria-label={playing ? "Pause" : "Play again"} onClick={() => setPlaying(!playing)} style={{ position: "absolute", inset: 0, background: "transparent", border: "none", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#F2EFE9" }}>
+          <button aria-label={playing ? "Pause" : "Play"} onClick={() => setPlaying(!playing)} style={{ position: "absolute", inset: 0, background: "transparent", border: "none", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#F2EFE9" }}>
             {!playing ? <span style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}><Icon name="play" size={24} /></span> : null}
           </button>
         </div>
-        {side("Previous day", "chevL", prev, -1, { left: 12 })}
-        {side("Next day", "chevR", next, 1, { right: 12 })}
       </div>
-      <button className="iconbtn" aria-label="Close" onClick={close} style={{ position: "absolute", top: "calc(16px + env(safe-area-inset-top, 0px))", left: 16, background: "rgba(0,0,0,0.45)", zIndex: 3 }}><Icon name="close" size={17} stroke={2.2} /></button>
+      <div style={{ height: 14, flexShrink: 0 }} />
     </div>
   );
 }
@@ -416,19 +420,23 @@ export function EntryDetail({ params }) {
               {mine ? <button className="chipbtn hrow gap4" aria-label="Change projects" onClick={() => setSheet("projects")} style={{ margin: "0 14px 0 4px", flexShrink: 0 }}><Icon name="layers" size={14} />Change</button> : null}
             </div>
           </div>
+          {/* One grid for all the clip's buttons, so they share the same size and spacing. */}
           {mine || owner ? (
             <div className="grid2">
               {mine ? <button className="btn ghost sm" onClick={() => setSheet("edit")}><Icon name="edit" size={15} />Edit note</button> : null}
               <button className="btn ghost sm" onClick={() => nav.go("capture", { entryId: e.id })}><Icon name="scissors" size={15} />Adjust trim</button>
               {mine ? <button className="btn ghost sm" onClick={replace}><Icon name="repeat" size={15} />Replace video</button> : null}
               {mine ? <button className="btn ghost sm" onClick={() => download("/api/files/media/" + e.mediaId + "/original")}><Icon name="download" size={15} />Download</button> : null}
+              <button className="btn dashed sm" onClick={addToDay} aria-label="Add another clip to this day" style={{ padding: 11, borderWidth: 1 }}><Icon name="plus" size={15} stroke={2.4} />Add a clip</button>
+              <button className="btn danger-ghost sm" onClick={removeHere} aria-label={siblings.length > 1 || !mine ? "Remove from " + p.name + " only" : "Delete this entry"} style={{ border: "1px solid rgba(224,120,110,0.4)" }}><Icon name="trash" size={15} />{siblings.length > 1 || !mine ? "Remove here" : "Delete"}</button>
             </div>
-          ) : <span className="small faint" style={{ lineHeight: 1.45 }}>Only {S.firstName(author)} or the project owner can change this clip.</span>}
+          ) : (
+            <>
+              <span className="small faint" style={{ lineHeight: 1.45 }}>Only {S.firstName(author)} or the project owner can change this clip.</span>
+              <button className="btn dashed sm" onClick={addToDay} aria-label="Add another clip to this day" style={{ padding: 11, borderWidth: 1 }}><Icon name="plus" size={15} stroke={2.4} />Add a clip</button>
+            </>
+          )}
           {!mine && owner ? <span className="small faint" style={{ lineHeight: 1.45 }}>Owner tools apply to {p.name} only. {S.firstName(author)}'s original clip and other projects aren't touched. The note and mood can only be edited by {S.firstName(author)}.</span> : null}
-          <div className={mine || owner ? "grid2" : ""}>
-            <button className="btn dashed" onClick={addToDay} aria-label="Add another clip to this day"><Icon name="plus" size={15} stroke={2.4} />Add a clip</button>
-            {mine || owner ? <button className="btn danger-ghost" onClick={removeHere} aria-label={siblings.length > 1 || !mine ? "Remove from " + p.name + " only" : "Delete this entry"} style={{ padding: 12, fontSize: 13.5, border: "1.5px solid rgba(224,120,110,0.4)" }}><Icon name="trash" size={15} />{siblings.length > 1 || !mine ? "Remove here" : "Delete"}</button> : null}
-          </div>
           {mine && siblings.length > 1 ? <button className="btn danger-ghost sm" onClick={() => setSheet("delete")}><Icon name="trash" size={15} />Delete everywhere</button> : null}
           <div style={{ height: 20 }} />
         </div>

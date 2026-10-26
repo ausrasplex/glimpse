@@ -226,7 +226,7 @@ export function Home() {
       <div className="hrow between" style={{ padding: "22px 20px 16px", flexShrink: 0 }}>
         <div className="stack gap2">
           <span className="small muted">{WEEKDAY[d.getDay()]}, {d.getDate()} {MONTH[d.getMonth()]}</span>
-          <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-0.01em" }}>{fresh ? "Welcome, " + S.firstName(me) : greeting()}</span>
+          <span style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-0.01em" }}>{fresh ? "Welcome, " + S.firstName(me) : greeting(S.firstName(me))}</span>
         </div>
         <div className="hrow gap8">
           <Bell open={open} onToggle={() => setOpen(!open)} />

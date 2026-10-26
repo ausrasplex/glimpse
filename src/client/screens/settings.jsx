@@ -56,12 +56,16 @@ function People() {
   const [delChoice, setDelChoice] = useState("keep");
   const [link, setLink] = useState(null);
   const [reset, setReset] = useState(null);
+  const [showPast, setShowPast] = useState(false);
   const admin = db.admin || {};
   const users = db.users.filter((u) => !u.deleted);
   const admins = users.filter((u) => u.role === "ADMIN" && !u.disabled).length;
   const setUser = (id, o, msg) => act("adminSetUser", Object.assign({ userId: id }, o)).then(() => msg && toast(msg)).catch(() => {});
   const statusInfo = { needs: ["Needs approval", "accent"], pending: ["Pending", ""], accepted: ["Accepted", "ok"], revoked: ["Revoked", ""], declined: ["Declined", ""], expired: ["Expired", ""] };
-  const invites = db.invites.slice().sort((a, b) => (a.status === "needs" ? -1 : 0) - (b.status === "needs" ? -1 : 0) || b.at - a.at).slice(0, 40);
+  const invites = db.invites.slice().sort((a, b) => (a.status === "needs" ? -1 : 0) - (b.status === "needs" ? -1 : 0) || b.at - a.at);
+  // Open invites always show; the rest (joined, expired, revoked, declined) fold away, and the server clears them after 30 days.
+  const isLive = (iv) => iv.status === "needs" || iv.status === "pending";
+  const active = invites.filter(isLive), past = invites.filter((iv) => !isLive(iv));
   const du = del ? S.user(db, del) : null;
   const sharedCount = du ? (admin.sharedProjects || {})[du.id] || 0 : 0;
   const deleteUser = async () => {
@@ -114,7 +118,8 @@ function People() {
           : <span className="small muted" style={{ lineHeight: 1.4 }}>While off, invites to new emails from project owners come to you for approval.</span>}
       </Inset>
       <div className="stack gap8">
-        {invites.map((iv) => {
+        {!active.length ? <span className="small faint" style={{ padding: "2px 2px" }}>No open invites.</span> : null}
+        {active.concat(showPast ? past : []).map((iv) => {
           const by = S.user(db, iv.invitedBy); const p = iv.projectId ? S.project(db, iv.projectId) : null;
           const st = statusInfo[iv.status] || [iv.status, ""]; const live = iv.status === "needs" || iv.status === "pending"; const open = invMenu === iv.id;
           return (
@@ -135,6 +140,12 @@ function People() {
             </div>
           );
         })}
+        {past.length ? (
+          <button className="hrow gap6" aria-expanded={showPast} onClick={() => setShowPast(!showPast)} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: "4px 2px", color: "var(--muted)", fontSize: 12.5, fontWeight: 600 }}>
+            {showPast ? "Hide past invites" : "Past invites · " + past.length}<Icon name="chevD" size={14} style={{ transform: showPast ? "rotate(180deg)" : "none" }} />
+          </button>
+        ) : null}
+        {showPast && past.length ? <span className="tiny faint" style={{ padding: "0 2px" }}>Past invites are cleared after 30 days.</span> : null}
       </div>
       <button className="btn dashed" style={{ fontSize: 13 }} onClick={() => act("createInviteLink").then((r) => setLink(r.link)).catch(() => {})}>+ Create invite link</button>
       {link ? <CopyBox url={link} note="Single use · expires in 7 days" /> : null}

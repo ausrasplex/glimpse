@@ -33,9 +33,20 @@ export function relDay(k) {
   if (n === 1) return "Yesterday";
   return dayLabel(k);
 }
-export function greeting() {
+// A hello for the time of day, with the person's name. One line is picked each time Glimpse opens, so it varies
+// from visit to visit but doesn't change while you're using it.
+const HELLOS = {
+  morning: ["Good morning, {n}", "Morning, {n}", "Rise and shine, {n}", "Fresh start, {n}", "Coffee and a glimpse, {n}?"],
+  midday: ["Good afternoon, {n}", "Hey there, {n}", "How's the day going, {n}?", "Afternoon, {n}", "Midday check-in, {n}"],
+  evening: ["Good evening, {n}", "Evening, {n}", "How was today, {n}?", "Winding down, {n}?", "Golden hour, {n}"],
+  night: ["Still up, {n}?", "Hello, night owl", "Late one, {n}?", "Quiet hours, {n}", "Night, {n}"]
+};
+const helloPick = Math.random();
+export function greeting(name) {
   const h = new Date().getHours();
-  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  const part = h >= 5 && h < 12 ? "morning" : h >= 12 && h < 17 ? "midday" : h >= 17 && h < 22 ? "evening" : "night";
+  const line = HELLOS[part][Math.floor(helloPick * HELLOS[part].length)];
+  return name ? line.replace("{n}", name) : line.replace(/,? \{n\}/, "");
 }
 export const fmtSec = (t) => { const m = Math.floor(t / 60); const s = t - m * 60; return m + ":" + (s < 10 ? "0" : "") + s.toFixed(1); };
 export const fmtDur = (t) => { t = Math.round(t); const m = Math.floor(t / 60); const s = t % 60; return m + ":" + pad(s); };

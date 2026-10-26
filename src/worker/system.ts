@@ -66,14 +66,16 @@ export async function cleanup() {
   await db.delete(schema.sessions).where(lt(schema.sessions.expiresAt, new Date()));
   await db.delete(schema.passwordResets).where(lt(schema.passwordResets.expiresAt, day));
   await db.update(schema.invites).set({ status: "expired" }).where(and(eq(schema.invites.status, "pending"), lt(schema.invites.expiresAt, new Date())));
+  // Finished invites (joined, expired, revoked, declined) are only history: keep 30 days of it.
+  await db.delete(schema.invites).where(and(inArray(schema.invites.status, ["accepted", "expired", "revoked", "declined"]), lt(schema.invites.createdAt, new Date(Date.now() - 30 * 86400e3))));
   // Uploads that were never saved as an entry.
   const used = db.select({ id: schema.entries.mediaId }).from(schema.entries);
   const orphans = await db.select().from(schema.media).where(and(lt(schema.media.createdAt, two), notInArray(schema.media.id, used)));
   for (const m of orphans) { await deletePrefix(`media/${m.ownerId}/${m.id}/`); await db.delete(schema.media).where(eq(schema.media.id, m.id)); }
   const stuck = await db.select().from(schema.media).where(and(eq(schema.media.status, "UPLOADING"), lt(schema.media.createdAt, day)));
   for (const m of stuck) await db.update(schema.media).set({ status: "FAILED", error: "The upload didn't finish." }).where(eq(schema.media.id, m.id));
-  // Old notifications.
-  await db.delete(schema.notifications).where(and(eq(schema.notifications.read, true), lt(schema.notifications.createdAt, new Date(Date.now() - 120 * 86400e3))));
+  // Notifications are cleared a day after they were read.
+  await db.delete(schema.notifications).where(and(eq(schema.notifications.read, true), lt(schema.notifications.readAt, day)));
   // Temp files left by a crash.
   try { for (const f of await readdir(join(env.dataDir, "tmp"))) { const p = join(env.dataDir, "tmp", f); if (Date.now() - (await stat(p)).mtimeMs > 6 * 3600e3) await run("rm", ["-rf", p]); } } catch { /* none */ }
   // Resumable uploads nobody came back to finish (their media is marked failed above, then removed as an orphan).

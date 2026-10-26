@@ -220,6 +220,7 @@ export const notifications = pgTable("notifications", {
   link: jsonb("link"),
   action: jsonb("action"),
   read: boolean("read").notNull().default(false),
+  readAt: ts("read_at"),
   createdAt: ts("created_at").notNull().defaultNow()
 }, (t) => [index("notifications_user_idx").on(t.userId, t.createdAt)]);
 
