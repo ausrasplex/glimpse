@@ -25,7 +25,19 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
+      # GitHub's Ubuntu runners come with the Android SDK; add the platform and build tools Capacitor 8 builds with.
+      # (Newer SDK tools replace sdkmanager with the "android" command; use whichever this runner has.)
+      - name: Android SDK
+        run: |
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
+          bin="$sdk/cmdline-tools/latest/bin"
+          if [ -x "$bin/android" ]; then
+            "$bin/android" sdk install platforms/android-36 build-tools/36.1.0
+          else
+            yes | "$bin/sdkmanager" --licenses > /dev/null || true
+            "$bin/sdkmanager" "platforms;android-36" "build-tools;36.1.0"
+          fi
 
       - name: Version
         id: version
