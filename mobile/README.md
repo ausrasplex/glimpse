@@ -38,3 +38,23 @@ npm run open         # open the project in Android Studio
   "upgrade" images and videos from an `http://` server to `https://` (which would break them).
 - **Versions:** the server reports `server.appApi`; the app refuses servers older than `MIN_SERVER_API` in `src/native.js`
   and asks for an update instead.
+
+## Releases and in-app updates
+
+Releases are built by GitHub Actions (`.github/workflows/android.yml`) and published as GitHub Releases on this repo.
+The app's **Profile › App › Check for updates** (and a daily check) reads them, downloads the APK, checks its SHA-256
+and opens Android's installer.
+
+**One-off setup**
+- The release key is `C:\Users\jesse\.glimpse-signing\glimpse-release.jks`; `mobile/keystore.properties` points to it
+  for local release builds. Both stay out of git. Back the key up: without it, installed apps can't be updated.
+- Add the four secrets listed in `C:\Users\jesse\.glimpse-signing\github-secrets.txt` under the repo's
+  Settings › Secrets and variables › Actions.
+- Debug builds are signed with a different key: uninstall a debug build once before installing a release.
+
+**Each release**
+1. Raise `version` in `mobile/package.json` (Android's build number is worked out from it).
+2. Write what's new in `mobile/RELEASE_NOTES.md`.
+3. Commit, then tag and push: `git tag app-v0.2.0 && git push origin app-v0.2.0`.
+
+Local release build: `npm run apk:release` → `android/app/build/outputs/apk/release/app-release.apk`.

@@ -1,0 +1,78 @@
+name: Android app
+
+# Push a tag like app-v0.2.0 (matching mobile/package.json's version) to build a signed APK and publish it as a
+# GitHub Release. The app's "Check for updates" reads these releases. Server images use v* tags (docker.yml).
+on:
+  push:
+    tags: ["app-v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Version
+        id: version
+        run: |
+          v=$(node -p "require('./mobile/package.json').version")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "app-v$v" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} doesn't match mobile/package.json (app-v$v)"; exit 1
+          fi
+
+      # The app bundles the website's interface (src/client), so it needs the main project's packages too.
+      - run: npm ci
+      - run: npm ci
+        working-directory: mobile
+
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.GLIMPSE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then echo "::error::Add the GLIMPSE_KEYSTORE_BASE64 secret (see mobile/README.md)"; exit 1; fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "GLIMPSE_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Build
+        working-directory: mobile
+        env:
+          GLIMPSE_KEYSTORE_PASSWORD: ${{ secrets.GLIMPSE_KEYSTORE_PASSWORD }}
+          GLIMPSE_KEY_ALIAS: ${{ secrets.GLIMPSE_KEY_ALIAS }}
+          GLIMPSE_KEY_PASSWORD: ${{ secrets.GLIMPSE_KEY_PASSWORD }}
+        run: |
+          chmod +x android/gradlew
+          npm run apk:release
+
+      - name: APK and checksum
+        id: files
+        run: |
+          v=${{ steps.version.outputs.version }}
+          mkdir -p out
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk "out/glimpse-$v.apk"
+          (cd out && sha256sum "glimpse-$v.apk" > "glimpse-$v.apk.sha256")
+          { cat mobile/RELEASE_NOTES.md; echo; echo "SHA-256: \`$(cut -d' ' -f1 out/glimpse-$v.apk.sha256)\`"; } > out/notes.md
+
+      - uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
+        with:
+          name: Glimpse for Android ${{ steps.version.outputs.version }}
+          body_path: out/notes.md
+          files: |
+            out/glimpse-${{ steps.version.outputs.version }}.apk
+            out/glimpse-${{ steps.version.outputs.version }}.apk.sha256

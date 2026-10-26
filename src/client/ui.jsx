@@ -311,6 +311,11 @@ export function ClipView({ m, start, end, playing, onEnded, loop, style, childre
       if (loop) { v.currentTime = start || 0; } else { v.pause(); onEnded && onEnded(); }
     }
   };
+  // A clip that runs to the very end of its file (motion photos usually do) ends before the check above sees it.
+  const onVideoEnd = () => {
+    const v = ref.current; if (!v) return;
+    if (loop && playing) { v.currentTime = start || 0; const p = v.play(); if (p && p.catch) p.catch(() => {}); } else if (onEnded) onEnded();
+  };
   // Photos play as a short clip with gentle movement (Ken Burns).
   if (m && m.kind === "photo") {
     const k = playing ? t : 0.5;
@@ -325,7 +330,7 @@ export function ClipView({ m, start, end, playing, onEnded, loop, style, childre
   }
   return (
     <div className="thumb" style={Object.assign({ background: m ? (m.thumb ? "url(" + m.thumb + ") center/cover, " + m.grad : m.grad) : "#222" }, style)}>
-      {url ? <video ref={ref} src={url} poster={m.thumb || NO_POSTER} muted={!!muted} playsInline onTimeUpdate={onTime} style={{ objectFit: fit || "cover" }} /> : null}
+      {url ? <video ref={ref} src={url} poster={m.thumb || NO_POSTER} muted={!!muted} playsInline onTimeUpdate={onTime} onEnded={onVideoEnd} style={{ objectFit: fit || "cover" }} /> : null}
       {!url && playing ? <div style={{ position: "absolute", left: 0, bottom: 0, height: 3, width: (t * 100) + "%", background: "rgba(255,255,255,0.75)" }} /> : null}
       {!url && playing ? <div style={{ position: "absolute", inset: 0, background: "linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.10) 50%, transparent 70%)", backgroundSize: "200% 100%", backgroundPosition: (100 - t * 200) + "% 0" }} /> : null}
       {children}

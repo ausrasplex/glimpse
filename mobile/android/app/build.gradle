@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+// The app's version comes from mobile/package.json. The build number Android compares when updating is worked out
+// from it (0.2.10 → 210), so it always goes up with the version.
+def appVersion = new groovy.json.JsonSlurper().parse(file("../../package.json")).version
+def appBuild = appVersion.tokenize(".").collect { it.replaceAll(/\D.*/, "").toInteger() }.with { it[0] * 10000 + it[1] * 100 + it[2] }
+
+// Release signing: mobile/keystore.properties on your PC (never committed), or environment variables in GitHub Actions.
+def signing = new Properties()
+def signingFile = file("../../keystore.properties")
+if (signingFile.exists()) signingFile.withInputStream { signing.load(it) }
+def signingValue = { String key, String env -> signing.getProperty(key) ?: System.getenv(env) }
+
 android {
     namespace = "app.glimpse.mobile"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +18,8 @@ android {
         applicationId "app.glimpse.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "0.1.0"
+        versionCode appBuild
+        versionName appVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +27,20 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            def store = signingValue("storeFile", "GLIMPSE_KEYSTORE")
+            if (store) {
+                storeFile file(store)
+                storePassword signingValue("storePassword", "GLIMPSE_KEYSTORE_PASSWORD")
+                keyAlias signingValue("keyAlias", "GLIMPSE_KEY_ALIAS")
+                keyPassword signingValue("keyPassword", "GLIMPSE_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
+            if (signingValue("storeFile", "GLIMPSE_KEYSTORE")) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

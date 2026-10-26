@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { GRADS } from "./util.js";
+import { GRADS, todayKey } from "./util.js";
 import * as S from "./sel.js";
 import { updatePending } from "./resumable.js";
 import { app, apiUrl, apiHeaders, fromServer } from "./platform.js";
@@ -168,6 +168,22 @@ export function AppProvider({ initial, children }) {
 
   const meUser = db ? S.me(db) : null;
   const accent = meUser ? S.prefs(db, meUser.id).accent : "#E8A33D";
+  // The app: keep the phone's reminder notifications in step with the reminders (and whether today's glimpse is in).
+  if (app && app.reminders) app.syncReminders = () => {
+    const d = dbRef.current, u = d && S.me(d);
+    if (!u) return;
+    const t = todayKey();
+    app.reminders.sync(d.reminders.filter((r) => r.userId === u.id), d.entries.some((e) => e.authorId === u.id && e.date === t)).catch(() => {});
+  };
+  useEffect(() => { if (app && app.syncReminders) app.syncReminders(); }, [db]);
+  // A reminder tapped: film today's glimpse. Straight into the one daily project, else choose a project.
+  if (app) app.openCapture = () => {
+    const d = dbRef.current, u = d && S.me(d);
+    if (!u) return;
+    const daily = S.myProjects(d, u.id).filter((x) => x.cat.daily);
+    if (daily.length === 1) { setDraft({ presetProjectId: daily[0].p.id }); nav.go("capture"); } else { setDraft(null); nav.go("projects"); }
+  };
+  useEffect(() => { if (app && app.pendingCapture && meUser) { app.pendingCapture = false; app.openCapture(); } }, [!!meUser]);
   useEffect(() => {
     document.documentElement.style.setProperty("--accent", accent);
     const n = parseInt(accent.slice(1), 16);

@@ -2,6 +2,8 @@
 const nextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  // Development only: lets the Android emulator (which reaches this PC as 10.0.2.2) load the dev server's pages.
+  allowedDevOrigins: ["10.0.2.2"],
   reactStrictMode: true,
   eslint: { ignoreDuringBuilds: true },
   // Types are checked in CI ("npm run typecheck"), so a type slip never blocks publishing an image.

@@ -1,6 +1,6 @@
 // Start-up for the Android app: pick a Glimpse server (first launch), check it can talk to this app, then load the
 // interface with the person's data. The native bridge must load before the interface reads window.GlimpseApp.
-import g, { MIN_SERVER_API } from "./native.js";
+import g, { MIN_SERVER_API, launchLink } from "./native.js";
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import React from "react";
 import { createRoot } from "react-dom/client";
@@ -105,8 +105,46 @@ function Problem({ title, body }) {
   );
 }
 
+// An invite link for a different server than the one this app is on: ask before switching.
+function SwitchForInvite({ inv }) {
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const host = (u) => u.replace(/^https?:\/\//, "");
+  const go = async () => {
+    setBusy(true); setErr("");
+    try { await probe(inv.server); } catch (x) { setBusy(false); setErr(x.old ? "That server runs an older Glimpse that this app can't use yet." : x.message); return; }
+    await g.setServer(inv.server);
+    window.history.replaceState({ g: 1 }, "", "/invite/" + encodeURIComponent(inv.token));
+    start();
+  };
+  return (
+    <div className="screen" style={{ padding: "calc(56px + env(safe-area-inset-top, 0px)) 24px 24px" }}>
+      <div className="stack gap10" style={{ flex: 1 }}>
+        <span style={{ fontSize: 22, fontWeight: 700 }}>Join a different server?</span>
+        <span className="muted" style={{ lineHeight: 1.5 }}>This invite is for <b>{host(inv.server)}</b>. Glimpse is connected to <b>{host(g.server)}</b>. Joining switches the app to the new server; you can switch back from Profile.</span>
+        {err ? <span className="small" role="alert" style={{ color: "var(--danger)", lineHeight: 1.45 }}>{err}</span> : null}
+      </div>
+      <div className="stack gap8">
+        <button className="btn" disabled={busy} onClick={go}>{busy ? "Connecting…" : "Switch and join"}</button>
+        <button className="btn outline" disabled={busy} onClick={() => start()}>Stay on {host(g.server)}</button>
+      </div>
+    </div>
+  );
+}
+
 export async function start() {
+  await launchLink();
   await g.load();
+  // Opened from an invite link: connect to its server (asking first if this app is on another one), then show the invite.
+  const inv = await g.takeInvite();
+  if (inv) {
+    if (g.server && g.server !== inv.server) { show(<SwitchForInvite inv={inv} />); return; }
+    if (!g.server) {
+      try { await probe(inv.server); } catch (x) { show(<Connect initial={inv.server} error={x.old ? "That server runs an older Glimpse that this app can't use yet." : x.message} />); return; }
+      await g.setServer(inv.server);
+    }
+    window.history.replaceState({ g: 1 }, "", "/invite/" + encodeURIComponent(inv.token));
+  }
   if (!g.server) { show(<Connect />); return; }
   let pub;
   try { pub = await probe(g.server); }

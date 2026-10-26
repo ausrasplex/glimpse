@@ -3,6 +3,7 @@ import { useApp } from "../store.jsx";
 import { Icon } from "../icons.jsx";
 import { Screen, Avatar, Thumb, PlayBadge, ClipView } from "../ui.jsx";
 import { useResumeOffer } from "./capture.jsx";
+import { UpdateBanner } from "./appupdate.jsx";
 import * as S from "../sel.js";
 import { todayKey, rel, greeting, WEEKDAY, MONTH, relDay, hexA, fullDay, parseKey } from "../util.js";
 
@@ -235,6 +236,7 @@ export function Home() {
           </button>
         </div>
       </div>
+      <UpdateBanner onOpen={() => nav.go("profile")} />
       <div className="scroll pad">
         {invites.map((m) => {
           const p = S.project(db, m.projectId);

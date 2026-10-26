@@ -1,6 +1,6 @@
 import React from "react";
 import { useApp, api, post } from "../store.jsx";
-import { startSso } from "../platform.js";
+import { app, startSso } from "../platform.js";
 import { Icon, Logo } from "../icons.jsx";
 import { Screen, PassInput, Strength, TimezonePicker, detectedZone, zoneLabel, Avatar, Thumb, Opts } from "../ui.jsx";
 import { GRADS } from "../util.js";
@@ -236,6 +236,12 @@ export function Signup({ params }) {
           {inv.project && inv.project.strip.length ? <div className="hrow gap6">{inv.project.strip.map((u, i) => <Thumb key={i} m={{ thumb: u, grad: GRADS[i % GRADS.length] }} style={{ flex: 1, aspectRatio: "3 / 4", borderRadius: 7 }} />)}</div> : null}
           <span style={{ fontSize: 12, color: "var(--fg-2)" }}>{inv.project ? inv.project.members + (inv.project.members === 1 ? " member · " : " members · ") + inv.project.clips + (inv.project.clips === 1 ? " clip so far · " : " clips so far · ") : ""}invite expires in {inv.daysLeft} {inv.daysLeft === 1 ? "day" : "days"}</span>
         </div>
+        {!app && typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent) ? (
+          // On an Android phone's browser: hand the invite to the Glimpse app (or, without it, its download page).
+          <a className="btn outline" style={{ marginTop: 16 }} href={"intent://invite?server=" + encodeURIComponent(window.location.origin) + "&token=" + encodeURIComponent(params.token) + "#Intent;scheme=glimpse;package=app.glimpse.mobile;S.browser_fallback_url=" + encodeURIComponent("https://github.com/ausrasplex/glimpse/releases") + ";end"}>
+            <Icon name="link" size={16} />Open in the Glimpse app
+          </a>
+        ) : null}
         <div className="stack gap6" style={{ marginTop: 24 }}>
           <h1 style={{ margin: 0, fontSize: 24, letterSpacing: "-0.01em" }}>Create your account</h1>
           <span className="muted" style={{ fontSize: 13.5 }}>{inv.project ? "You'll land straight in the project once you're in." : "You'll make your first project once you're in."}</span>

@@ -2,6 +2,7 @@ import React from "react";
 import { useApp, post, api } from "../store.jsx";
 import { app, apiUrl, apiHeaders, signedOut } from "../platform.js";
 import { Icon } from "../icons.jsx";
+import { AppUpdates, ReminderPermission } from "./appupdate.jsx";
 import { Screen, TopBar, Sheet, Avatar, Toggle, ToggleRow, Swatches, Confirm, TimezonePicker, detectedZone, PassInput, Strength, Opts, Choice, useDragList, move } from "../ui.jsx";
 import * as S from "../sel.js";
 import { MONTH, ACCENTS, PALETTE, uid, hexA } from "../util.js";
@@ -205,6 +206,7 @@ export function Profile({ params }) {
           </button>
           <div className="card stack gap4" style={{ paddingBottom: 8 }}>
             <span className="stack gap2" style={{ paddingBottom: 8 }}><span style={{ fontSize: 14, fontWeight: 600 }}>Reminders</span><span className="small muted">Tap a reminder to edit it</span></span>
+            {app ? <ReminderPermission /> : null}
             {reminders.map((r) => {
               const t = fmtTime(r.time);
               return (
@@ -227,6 +229,7 @@ export function Profile({ params }) {
           </div>
         </div>
 
+        {app ? <AppUpdates /> : null}
         <div className="sec" style={{ marginTop: 30, marginBottom: 10 }}>Session</div>
         {app ? (
           <div className="hrow between gap12" style={{ padding: 14, borderRadius: 12, background: "var(--surface)", border: "1px solid var(--line)", marginBottom: 10 }}>

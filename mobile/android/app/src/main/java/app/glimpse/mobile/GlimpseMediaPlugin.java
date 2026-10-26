@@ -294,6 +294,100 @@ public class GlimpseMediaPlugin extends Plugin {
         });
     }
 
+    // ---------- Saving and sharing mashes ----------
+
+    /** Downloads { url, name } into the app's cache (for Share or Save). Events "download": { received, total }. */
+    @PluginMethod
+    public void fetchToCache(PluginCall call) {
+        final String url = call.getString("url");
+        final String name = call.getString("name", "glimpse.mp4").replaceAll("[\\/:*?\"<>|]", "_");
+        if (url == null || !(url.startsWith("http://") || url.startsWith("https://"))) {
+            call.reject("No link to download.");
+            return;
+        }
+        work.execute(() -> {
+            File dir = new File(getContext().getCacheDir(), "shared");
+            dir.mkdirs();
+            File[] old = dir.listFiles();
+            if (old != null) for (File o : old) o.delete();
+            File out = new File(dir, name);
+            java.net.HttpURLConnection c = null;
+            try {
+                c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                c.setConnectTimeout(20000);
+                c.setReadTimeout(60000);
+                c.setRequestProperty("X-Glimpse-App", "1");
+                if (c.getResponseCode() != 200) throw new Exception("the server answered " + c.getResponseCode());
+                long total = c.getContentLengthLong(), got = 0, tick = 0;
+                try (java.io.InputStream in = c.getInputStream(); java.io.OutputStream o = new FileOutputStream(out)) {
+                    byte[] buf = new byte[64 * 1024];
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        o.write(buf, 0, n);
+                        got += n;
+                        long now = System.currentTimeMillis();
+                        if (now - tick > 250) {
+                            tick = now;
+                            JSObject p = new JSObject();
+                            p.put("received", got);
+                            p.put("total", total);
+                            notifyListeners("download", p);
+                        }
+                    }
+                }
+                JSObject r = new JSObject();
+                r.put("path", out.getAbsolutePath());
+                call.resolve(r);
+            } catch (Exception e) {
+                out.delete();
+                call.reject("Couldn't download it: " + e.getMessage());
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        });
+    }
+
+    /** Copies a downloaded video { path, name } into the phone's gallery, in Movies/Glimpse (Android 10 and later). */
+    @PluginMethod
+    public void saveToGallery(PluginCall call) {
+        final String path = call.getString("path");
+        final String name = call.getString("name", "Glimpse.mp4");
+        if (Build.VERSION.SDK_INT < 29) {
+            call.reject("Saving to the gallery needs Android 10 or later. Use Share instead.");
+            return;
+        }
+        work.execute(() -> {
+            File src = path != null ? new File(path) : null;
+            if (src == null || !src.exists()) {
+                call.reject("The video is missing. Try again.");
+                return;
+            }
+            ContentResolver cr = getContext().getContentResolver();
+            android.content.ContentValues v = new android.content.ContentValues();
+            v.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
+            v.put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4");
+            v.put(MediaStore.MediaColumns.RELATIVE_PATH, "Movies/Glimpse");
+            v.put(MediaStore.MediaColumns.IS_PENDING, 1);
+            Uri uri = cr.insert(MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), v);
+            if (uri == null) {
+                call.reject("The gallery didn't accept the video.");
+                return;
+            }
+            try (java.io.InputStream in = new java.io.FileInputStream(src); java.io.OutputStream o = cr.openOutputStream(uri)) {
+                byte[] buf = new byte[64 * 1024];
+                int n;
+                while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
+                android.content.ContentValues done = new android.content.ContentValues();
+                done.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                cr.update(uri, done, null, null);
+                call.resolve();
+            } catch (Exception e) {
+                cr.delete(uri, null, null);
+                call.reject("Couldn't save it: " + e.getMessage());
+            }
+        });
+    }
+
     // ---------- Camera ----------
 
     /** Films a video with the phone's camera app. Resolves to the new item, or { cancelled: true }. */

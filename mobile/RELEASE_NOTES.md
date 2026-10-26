@@ -1,0 +1,4 @@
+- Your gallery by day, opening at the day you're adding to
+- Uploads that keep going in the background
+- Full-screen playback with the date and note, swipe between days
+- Check for updates from Profile › App

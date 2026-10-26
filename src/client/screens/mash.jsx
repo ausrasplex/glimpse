@@ -3,7 +3,7 @@ import { useApp, live } from "../store.jsx";
 import { Icon } from "../icons.jsx";
 import { Screen, TopBar, Steps, Sheet, Thumb, ClipView, NO_POSTER, PlayBadge, Menu, Choice, Opts, Toggle, ToggleRow, Stepper, Section, Confirm, useDragList, move } from "../ui.jsx";
 import * as S from "../sel.js";
-import { download, haptic } from "../platform.js";
+import { app, download, haptic } from "../platform.js";
 import { QUALITY, OUTPUT, stampDate as shStampDate, stampLines as shStampLines } from "../../shared/mash";
 import { STAMP_DEFAULT, LABEL_DEFAULT, cleanStamp, cleanLabel, matched, labelText } from "../../shared/textstyle";
 import { TextPreview, TextStyleControls, FontPicker } from "./textstyle.jsx";
@@ -730,7 +730,7 @@ export function MashLibrary() {
 }
 
 export function MashPlayer({ params }) {
-  const { db, act, local, refresh, nav, me, toast, setMashDraft } = useApp();
+  const { db, act, local, refresh, nav, me, toast, setToast, setMashDraft } = useApp();
   const m = S.mash(db, params.mashId);
   const [renaming, setRenaming] = useState(!!params.rename);
   const [draft, setDraft] = useState(m ? m.title : "");
@@ -757,6 +757,16 @@ export function MashPlayer({ params }) {
   };
   const first = es[0], last = es[es.length - 1];
   const play = () => { const v = vref.current; if (!v) return; const pr = v.play(); if (pr && pr.catch) pr.catch(() => {}); };
+  // In the app: download the mash, then share it or save it to the gallery.
+  const phoneMash = async (how) => {
+    if (!ready) { toast("You can " + how + " it once it's rendered"); return; }
+    let shown = -1;
+    const progress = (p) => { const pct = Math.round(p * 100); if (pct >= shown + 10 || pct === 100) { shown = pct; toast((how === "share" ? "Getting it ready to share" : "Saving to your gallery") + " · " + pct + "%"); } };
+    try {
+      await app.mash[how](m.src, m.title, progress);
+      if (how === "save") { haptic("success"); toast("Saved to your gallery (Movies › Glimpse)"); } else setToast(null);
+    } catch (e) { if (!/cancel/i.test(e.message || "")) toast(e.message || "That didn't work. Try again.", null, "warn"); }
+  };
   return (
     <Screen>
       <div className="hrow between" style={{ padding: "20px 20px 12px", flexShrink: 0 }}>
@@ -833,8 +843,12 @@ export function MashPlayer({ params }) {
           <span className="small muted">{es.length} clips{first ? " · " + rangeText({ from: first.date, to: last.date }) : ""}{m.tracks.length ? " · Music: " + m.tracks.map((tr) => (S.track(db, tr.trackId) || { title: "removed track" }).title).join(", ") : ""}</span>
         </div>
         {mine ? (
-          <div className="pad grid4" style={{ paddingTop: 18, gap: 8 }}>
-            {[{ l: "Download", i: "download", f: () => { if (ready) download(m.src + (m.src.indexOf("?") >= 0 ? "&" : "?") + "download=1"); else toast("You can download it once it's rendered"); } }, { l: "Re-mash", i: "refresh", f: () => { setMashDraft(null); nav.go("mash1", { remashOf: m.id }); } }, { l: "Rename", i: "edit", f: () => { setRenaming(true); setConfirm(false); } }, { l: "Delete", i: "trash", f: () => { setConfirm(true); setRenaming(false); }, d: true }].map((a) => (
+          <div className="pad" style={{ paddingTop: 18, display: "grid", gridTemplateColumns: "repeat(" + (app && app.mash ? 5 : 4) + ", minmax(0,1fr))", gap: 8 }}>
+            {(app && app.mash ? [
+              // The app: the phone's share menu, and saving into the gallery (Movies/Glimpse).
+              { l: "Share", i: "share", f: () => phoneMash("share") },
+              { l: "Save", i: "download", f: () => phoneMash("save") }
+            ] : [{ l: "Download", i: "download", f: () => { if (ready) download(m.src + (m.src.indexOf("?") >= 0 ? "&" : "?") + "download=1"); else toast("You can download it once it's rendered"); } }]).concat([{ l: "Re-mash", i: "refresh", f: () => { setMashDraft(null); nav.go("mash1", { remashOf: m.id }); } }, { l: "Rename", i: "edit", f: () => { setRenaming(true); setConfirm(false); } }, { l: "Delete", i: "trash", f: () => { setConfirm(true); setRenaming(false); }, d: true }]).map((a) => (
               <button key={a.l} onClick={a.f} className="stack gap6" style={{ alignItems: "center", padding: "12px 0", borderRadius: 14, background: "var(--surface)", border: "1px solid " + (a.l === "Rename" && renaming ? "var(--accent)" : "var(--line)"), color: a.d ? "var(--danger)" : "var(--fg)", fontSize: 12, fontWeight: 600 }}><Icon name={a.i} size={18} color={a.d ? "var(--danger)" : "#BDB7AD"} />{a.l}</button>
             ))}
           </div>
