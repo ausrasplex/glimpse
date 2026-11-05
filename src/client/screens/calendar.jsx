@@ -97,6 +97,10 @@ export function Calendar({ params }) {
   const [day, setDay] = useState(null);
   // The last day tapped keeps its outline after its panel closes.
   const [chosen, setChosen] = useState(null);
+  const [dir, setDir] = useState(0);
+  const shift = (n) => { setDir(n); setYm((o) => { const d = new Date(o.y, o.m + n, 1); return { y: d.getFullYear(), m: d.getMonth() }; }); };
+  const future = ym.y > now.getFullYear() || (ym.y === now.getFullYear() && ym.m >= now.getMonth());
+  const swipe = useSwipe(() => shift(-1), future ? null : () => shift(1));
   if (!cur) return <NoProjects />;
   const entries = S.projectEntries(db, cur.p.id);
   const byDay = {};
@@ -112,29 +116,28 @@ export function Calendar({ params }) {
   const t = todayKey();
   const monthKey = ym.y + "-" + String(ym.m + 1).padStart(2, "0");
   const monthDays = Object.keys(byDay).filter((k) => k.slice(0, 7) === monthKey).length;
-  const shift = (n) => setYm((o) => { const d = new Date(o.y, o.m + n, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
   const isCurMonth = ym.y === now.getFullYear() && ym.m === now.getMonth();
-  const future = ym.y > now.getFullYear() || (ym.y === now.getFullYear() && ym.m >= now.getMonth());
   return (
     <Screen tab="calendar">
       <Header cur={cur} mine={mine} view="calendar" onPick={(id) => nav.replace("calendar", { projectId: id })} />
-      <div className="scroll">
+      <div className="scroll" {...swipe}>
         <div className="hrow between" style={{ padding: "6px 20px 14px" }}>
           <button className="iconbtn plain sq" aria-label="Previous month" onClick={() => shift(-1)}><Icon name="chevL" size={20} color="var(--muted)" /></button>
           <button onClick={() => { setYm({ y: now.getFullYear(), m: now.getMonth() }); }} style={{ background: "none", border: "none", color: "var(--fg)", fontSize: 16, fontWeight: 600 }}>{MONTH[ym.m]} {ym.y}{!isCurMonth ? <span className="tag accent" style={{ marginLeft: 8, verticalAlign: "middle" }}>Today</span> : null}</button>
           <button className="iconbtn plain sq" aria-label="Next month" onClick={() => shift(1)} disabled={future} style={{ opacity: future ? 0.3 : 1 }}><Icon name="chevR" size={20} color="var(--muted)" /></button>
         </div>
         <div className="cal pad" style={{ marginBottom: 8 }}>{["S", "M", "T", "W", "T", "F", "S"].map((l, i) => <div key={i} style={{ textAlign: "center", fontSize: 11, fontWeight: 600, color: "var(--faint)", letterSpacing: "0.04em" }}>{l}</div>)}</div>
-        <div className="cal pad">
+        <div key={monthKey} className={"cal pad" + (dir > 0 ? " from-right" : dir < 0 ? " from-left" : "")}>
           {cells.map((c) => {
             const es = byDay[c.key] || [];
             const m = es.length ? S.media(db, es[0].mediaId) : null;
             const isFuture = c.key > t;
-            const bg = m && c.inMonth ? (m.thumb ? "url(" + m.thumb + ") center/cover" : m.grad) : undefined;
+            const bg = m ? (m.thumb ? "url(" + m.thumb + ") center/cover" : m.grad) : undefined;
+            const off = isFuture || (!c.inMonth && !es.length);
             return (
-              <button key={c.key} disabled={isFuture || !c.inMonth} onClick={() => { setChosen(c.key); if (es.length === 1) nav.go("entry", { entryId: es[0].id }); else setDay(c.key); }} aria-label={fullDay(c.key) + (es.length ? ", " + es.length + " clip" + (es.length > 1 ? "s" : "") : "")} className={"day" + (c.inMonth ? "" : " out") + (es.length && c.inMonth ? " has" : "") + (c.key === t ? " today" : "") + (c.key === chosen ? " sel" : "")} style={{ background: bg, opacity: isFuture && c.inMonth ? 0.45 : 1, cursor: isFuture || !c.inMonth ? "default" : "pointer" }}>
+              <button key={c.key} disabled={off} onClick={() => { setChosen(c.key); if (es.length === 1) nav.go("entry", { entryId: es[0].id }); else setDay(c.key); }} aria-label={fullDay(c.key) + (es.length ? ", " + es.length + " clip" + (es.length > 1 ? "s" : "") : "")} className={"day" + (c.inMonth ? "" : " out") + (es.length ? " has" : "") + (c.key === t ? " today" : "") + (c.key === chosen ? " sel" : "")} style={{ background: bg, opacity: isFuture && c.inMonth ? 0.45 : !c.inMonth && es.length ? 0.6 : 1, cursor: off ? "default" : "pointer" }}>
                 <span className="n">{c.n}</span>
-                {es.length > 1 && c.inMonth ? <span className="count">{es.length}</span> : null}
+                {es.length > 1 ? <span className="count">{es.length}</span> : null}
               </button>
             );
           })}
@@ -291,9 +294,20 @@ function useSwipe(onPrev, onNext) {
 
 const AR = { portrait: 9 / 16, landscape: 16 / 9, square: 1 };
 
+// Mute a clip in this project: silent when played, and its sound is left out of mashes.
+function MuteButton({ e, style }) {
+  const { local, actSoon } = useApp();
+  const flip = () => {
+    const muted = !e.muted;
+    local((n) => { n.entries.find((x) => x.id === e.id).muted = muted; });
+    actSoon("mute-" + e.id, "setEntryMuted", { entryId: e.id, muted }, 150);
+  };
+  return <button className="iconbtn" aria-label={e.muted ? "Unmute this clip" : "Mute this clip"} aria-pressed={!!e.muted} onClick={flip} style={style}><Icon name={e.muted ? "mute" : "volume"} size={17} color={e.muted ? "var(--accent)" : undefined} /></button>;
+}
+
 // Full-screen playback with the day and note on the clip, like a mash. Each clip loops until you move on or tap to pause. Swipe (or the arrow keys) for other days.
 function Player({ entryId, onClose }) {
-  const { db } = useApp();
+  const { db, me } = useApp();
   const [id, setId] = useState(entryId);
   const [playing, setPlaying] = useState(true);
   const [dir, setDir] = useState(0);
@@ -333,11 +347,11 @@ function Player({ entryId, onClose }) {
       <div className="hrow between" style={{ padding: "14px 16px 10px", flexShrink: 0 }}>
         <button className="iconbtn" aria-label="Close" onClick={close} style={{ border: "1px solid var(--line)" }}><Icon name="chevD" size={18} stroke={2.2} /></button>
         <span className="small muted num">{of > 1 ? at + " of " + of : ""}</span>
-        <span style={{ width: 36 }} />
+        {c.m.kind !== "photo" && (e.authorId === me.id || S.isOwner(db, e.projectId, me.id)) ? <MuteButton e={e} style={{ border: "1px solid var(--line)" }} /> : <span style={{ width: 36 }} />}
       </div>
       <div ref={area} {...swipe} style={Object.assign({ position: "relative", flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }, swipe.style)}>
         <div key={e.id} className={dir > 0 ? "from-right" : dir < 0 ? "from-left" : ""} style={{ position: "relative", width: w, height: h }}>
-          <ClipView m={c.m} start={c.start} end={c.end} playing={playing} loop style={{ position: "absolute", inset: 0, borderRadius: 0 }}>
+          <ClipView m={c.m} start={c.start} end={c.end} playing={playing} loop muted={!!e.muted} style={{ position: "absolute", inset: 0, borderRadius: 0 }}>
             {/* The day and the note together, in one box at the bottom. */}
             <span className="stack" style={{ position: "absolute", left: edge, bottom: edge, maxWidth: "82%", gap: Math.round(fs * 0.2), padding: Math.round(fs * 0.5) + "px " + Math.round(fs * 0.7) + "px", borderRadius: Math.round(fs * 0.55), background: "rgba(0,0,0,0.5)", color: "#FFFFFF", lineHeight: 1.3, pointerEvents: "none" }}>
               <span style={{ fontSize: Math.round(fs * 0.8), fontWeight: 700, letterSpacing: "0.02em", opacity: e.note ? 0.85 : 1 }}>{day}</span>
@@ -390,6 +404,7 @@ export function EntryDetail({ params }) {
           <ClipView m={c.m} start={c.start} end={c.end} playing={false} style={{ position: "absolute", inset: 0, borderRadius: 0 }} />
           <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(0,0,0,0.35), transparent 25%, transparent 70%, #121212)", pointerEvents: "none" }} />
           <button className="iconbtn" aria-label="Back" onClick={nav.back} style={{ position: "absolute", top: 20, left: 20, background: "rgba(0,0,0,0.45)" }}><Icon name="back" size={17} stroke={2.2} /></button>
+          {(mine || owner) && c.m.kind !== "photo" ? <MuteButton e={e} style={{ position: "absolute", top: 20, right: 20, background: "rgba(0,0,0,0.45)" }} /> : null}
           <button aria-label="Play full screen" onClick={() => setFull(true)} style={{ position: "absolute", top: "46%", left: "50%", transform: "translate(-50%,-50%)", width: 64, height: 64, borderRadius: "50%", background: "rgba(0,0,0,0.4)", border: "none", display: "flex", alignItems: "center", justifyContent: "center", color: "#F2EFE9" }}><Icon name="play" size={24} /></button>
           <div className="stack gap6" style={{ position: "absolute", left: 20, right: 20, bottom: 18, pointerEvents: "none" }}>
             <span style={{ fontSize: 13, color: "var(--fg-2)" }}>{fullDay(e.date)} · {new Date(e.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>

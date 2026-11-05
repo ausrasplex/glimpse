@@ -171,6 +171,7 @@ export const setServer: Action = async ({ user }, a) => {
     if (typeof a.perDay === "number") s.perDay = Math.round(num(a.perDay, 1, 20, 5));
     if (typeof a.defaultQuota === "number" && QUOTAS.includes(a.defaultQuota)) s.defaultQuota = a.defaultQuota;
     if (typeof a.concurrency === "number") s.concurrency = Math.round(num(a.concurrency, 1, 4, 1));
+    if (a.gpu === "off" || a.gpu === "playback" || a.gpu === "all") s.gpu = a.gpu;
     if (a.maxRes === "720" || a.maxRes === "1080" || a.maxRes === "4k") s.maxRes = a.maxRes;
     if (a.mashQuality === "smaller" || a.mashQuality === "high" || a.mashQuality === "best") s.mashQuality = a.mashQuality;
     if (a.playback === "720" || a.playback === "1080") s.playback = a.playback;

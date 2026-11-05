@@ -9,7 +9,7 @@ import { processMedia, importImmich, motionVideo } from "./media";
 import { processTrack, backfillPeaks } from "./music";
 import { renderMash } from "./mash";
 import { runReminders, runBackup, cleanup, deleteObjects } from "./system";
-import { ffmpegVersion } from "./ff";
+import { ffmpegVersion, gpuInfo } from "./ff";
 import { enqueue } from "../server/queue";
 
 const log = (...a: unknown[]) => console.log("[worker]", ...a);
@@ -18,7 +18,8 @@ async function main() {
   const conn = redis();
   await ensureStorage().catch((e) => log("storage check failed:", (e as Error).message));
   const ff = await ffmpegVersion();
-  log("starting ·", ff);
+  const gpu = await gpuInfo();
+  log("starting ·", ff, "·", gpu.note);
 
   const media = new Worker(Q.media, async (job: Job) => {
     if (job.name === "immich") return importImmich(job.data.mediaId, job.data.userId, job.data.assetId);
@@ -42,7 +43,7 @@ async function main() {
   for (const m of staleMedia) await enqueue.processMedia(m.id);
   backfillPeaks().catch((e) => log("waveforms:", (e as Error).message));
 
-  const beat = () => conn.set("glimpse:worker", JSON.stringify({ at: Date.now(), ffmpeg: ff }), "EX", 60).catch(() => undefined);
+  const beat = () => conn.set("glimpse:worker", JSON.stringify({ at: Date.now(), ffmpeg: ff, gpu: !!gpu.device, gpuNote: gpu.note }), "EX", 60).catch(() => undefined);
   await beat();
   setInterval(beat, 15e3);
   // Every minute: reminders, scheduled backups, and keep render concurrency in step with Settings.

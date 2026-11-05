@@ -156,7 +156,16 @@ export function AppProvider({ initial, children }) {
       });
     }, 2500);
     const slow = setInterval(() => { if (dbRef.current && !document.hidden) refresh(); }, 60000);
-    return () => { clearInterval(t); clearInterval(slow); };
+    // A tiny check every few seconds: when the person has something new (an invite, a clip), reload.
+    const check = async () => {
+      const d = dbRef.current;
+      if (!d || document.hidden || !S.me(d)) return;
+      try { const r = await api("/api/pulse"); if (r.pulse !== d.pulse) refresh(); } catch (e) { /* offline: try again next time */ }
+    };
+    const pulse = setInterval(check, 5000);
+    const back = () => { if (!document.hidden && dbRef.current) refresh(); };
+    document.addEventListener("visibilitychange", back);
+    return () => { clearInterval(t); clearInterval(slow); clearInterval(pulse); document.removeEventListener("visibilitychange", back); };
   }, [refresh, toast]);
 
   // Keep the capture draft with its saved upload, so a reloaded page can pick up where it left off.

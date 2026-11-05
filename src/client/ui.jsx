@@ -279,7 +279,7 @@ export function Thumb({ m, className, style, children, label }) {
 // Plays the chosen section of a clip. Real videos loop the section; sample clips show a gentle "playing" sweep.
 // Android's WebView draws a big grey play button over a video that has no poster; a clear one keeps the thumbnail behind it.
 export const NO_POSTER = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-export function ClipView({ m, start, end, playing, onEnded, loop, style, children, fit, muted }) {
+export function ClipView({ m, start, end, playing, onEnded, loop, style, children, fit, muted, onClock }) {
   const ref = useRef(null);
   const url = m ? m.liveUrl || (m.liveId ? live.video[m.liveId] : null) || m.src || null : null;
   const [t, setT] = useState(0);
@@ -305,6 +305,16 @@ export function ClipView({ m, start, end, playing, onEnded, loop, style, childre
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, [playing, start, end, url, m && m.id]);
+  // Where the video is, every frame while it plays (timeupdate only fires a few times a second).
+  const clock = useRef(onClock);
+  clock.current = onClock;
+  useEffect(() => {
+    if (!playing || !url || !clock.current) return;
+    let raf;
+    const tick = () => { if (ref.current && clock.current) clock.current(ref.current.currentTime); raf = requestAnimationFrame(tick); };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, url]);
   const onTime = () => {
     const v = ref.current; if (!v) return;
     if (v.currentTime >= (end || v.duration) - 0.03) {

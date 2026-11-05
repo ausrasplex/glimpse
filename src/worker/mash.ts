@@ -7,7 +7,7 @@ import { downloadTo, putFile, keys, deleteKeys } from "../server/storage";
 import { getSettings } from "../server/settings";
 import { notify } from "../server/core";
 import { QUALITY, qualityOf, OUTPUT, STAMP_DEFAULT, segmentLen, extendWindow, type MashSettings } from "../shared/mash";
-import { ffmpeg, probe } from "./ff";
+import { ffmpeg, probe, gpuFor } from "./ff";
 import { ensureFont, fontPath, fallbackNotes } from "../server/fonts";
 import { cleanStamp, cleanLabel, matched, DEFAULT_FONT } from "../shared/textstyle";
 import { tmpDir } from "./media";
@@ -79,15 +79,22 @@ export async function renderMash(mashId: string) {
       const target = segmentLen({ len, start, end, duration: src.duration, photo }, effective, bpm);
       const win = photo ? { start: 0, len: target } : extendWindow(start, len, target, src.duration);
       const cur = musicOn && st.musicLabel !== false ? titles.find((x) => at >= x.from && at < x.to) || (st.whenEnds === "loop" ? titles[0] : null) : null;
-      segs.push({ kind: photo ? "photo" : "video", file: src.file, start: win.start, len: Math.max(0.2, Math.min(win.len, target)), orient: md.orient as Segment["orient"], hasAudio: src.hasAudio, motion: md.motion, date: e.date, note: e.note, musicTitle: cur ? cur.title : null, musicArtist: cur ? cur.artist : null });
+      segs.push({ kind: photo ? "photo" : "video", file: src.file, start: win.start, len: Math.max(0.2, Math.min(win.len, target)), orient: md.orient as Segment["orient"], hasAudio: src.hasAudio, muted: e.muted, motion: md.motion, date: e.date, note: e.note, musicTitle: cur ? cur.title : null, musicArtist: cur ? cur.artist : null });
       at += target;
     }
 
-    const opts = { W, H, shape: st.shape, fill: st.fill, stamp, label, clipAudio: st.audio !== "music", fonts, crf: q.crf };
+    const opts = { W, H, shape: st.shape, fill: st.fill, stamp, label, clipAudio: st.audio !== "music", fonts, crf: q.crf, gpu: await gpuFor("mash", s.gpu) };
     const files: string[] = [];
     for (let i = 0; i < segs.length; i++) {
       const f = join(dir, `seg${String(i).padStart(4, "0")}.mov`);
-      await renderSegment(opts, segs[i], i, dir, f);
+      try { await renderSegment(opts, segs[i], i, dir, f); }
+      catch (e) {
+        if (!opts.gpu) throw e;
+        // Segments are joined without re-encoding, so they must all come from one encoder: start again on the CPU.
+        console.error("[gpu] mash encoding failed, starting again on the CPU:", (e as Error).message.slice(0, 300));
+        opts.gpu = null; files.length = 0; i = -1;
+        continue;
+      }
       files.push(f);
       if (i % 5 === 4 && !(await db.query.mashes.findFirst({ where: eq(schema.mashes.id, mashId), columns: { id: true } }))) { console.log("[mash]", mashId, "cancelled"); return; }
       await setMash(mashId, { progress: Math.round(8 + (i + 1) / segs.length * 80) });

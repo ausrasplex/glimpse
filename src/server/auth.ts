@@ -5,7 +5,7 @@ import { id, token, sha256 } from "./ids";
 import { hashPassword, verifyPassword, encrypt } from "./crypto";
 import { getSettings, saveSettings } from "./settings";
 import { createSession } from "./session";
-import { createUserBasics, fail, notify, notifyAdmins, freestyleCategory } from "./core";
+import { createUserBasics, fail, notify, notifyAdmins, joiningCategory } from "./core";
 import { hit, clear, ttl } from "./ratelimit";
 import { sendMail } from "./mail";
 import { env } from "./env";
@@ -133,7 +133,7 @@ async function acceptInvite(tx: Tx, inv: typeof schema.invites.$inferSelect, use
   await tx.update(schema.invites).set({ status: "accepted", acceptedAt: new Date(), acceptedUserId: userId }).where(eq(schema.invites.id, inv.id));
   if (inv.projectId) {
     const p = await tx.query.projects.findFirst({ where: eq(schema.projects.id, inv.projectId) });
-    const cat = await freestyleCategory(tx, userId);
+    const cat = await joiningCategory(tx, inv.projectId, userId);
     const m = await tx.query.members.findFirst({ where: and(eq(schema.members.projectId, inv.projectId), eq(schema.members.inviteId, inv.id)) });
     if (m) await tx.update(schema.members).set({ userId, status: "ACTIVE", categoryId: cat, joinedAt: new Date(), pinned: true, archived: false, lastViewedAt: new Date(), email: null }).where(eq(schema.members.id, m.id));
     else await tx.insert(schema.members).values({ id: id("mb_"), projectId: inv.projectId, userId, role: "CONTRIBUTOR", status: "ACTIVE", categoryId: cat, pinned: true, joinedAt: new Date(), lastViewedAt: new Date(), invitedBy: inv.invitedBy, invitedAt: inv.createdAt });

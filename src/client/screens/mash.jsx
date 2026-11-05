@@ -286,7 +286,7 @@ export function MashStep1({ params }) {
 }
 
 export function MashStep2() {
-  const { db, nav, me, mashDraft, setMashDraft, setDraft } = useApp();
+  const { db, nav, me, mashDraft, setMashDraft, setDraft, local, actSoon } = useApp();
   const [showAll, setShowAll] = useState(null);
   const [showMissed, setShowMissed] = useState(8);
   if (!mashDraft) return <Screen><TopBar title="Review clips" /></Screen>;
@@ -304,11 +304,16 @@ export function MashStep2() {
   const multiPicked = multi.reduce((a, k) => a + byDay[k].filter((e) => !d.excluded[e.id]).length, 0);
   const Tile = ({ e, w }) => {
     const on = !d.excluded[e.id]; const c = S.clipOf(db, e);
+    const canMute = c.m.kind !== "photo" && (e.authorId === me.id || S.isOwner(db, e.projectId, me.id));
+    const mute = () => { const muted = !e.muted; local((n) => { n.entries.find((x) => x.id === e.id).muted = muted; }); actSoon("mute-" + e.id, "setEntryMuted", { entryId: e.id, muted }, 150); };
     return (
+      <div style={{ position: "relative", width: w || 72, flexShrink: 0 }}>
       <button onClick={() => toggle(e.id)} aria-pressed={on} aria-label={(on ? "Leave out " : "Include ") + c.len.toFixed(1) + "s clip from " + fullDay(e.date)} style={{ position: "relative", width: w || 72, height: (w || 72) * 4 / 3, flexShrink: 0, borderRadius: 10, background: c.m.thumb ? "url(" + c.m.thumb + ") center/cover" : c.m.grad, border: "2px solid " + (on ? "var(--accent)" : "var(--line)"), padding: 0, opacity: on ? 1 : 0.4 }}>
         <span style={{ position: "absolute", top: 6, right: 6, width: 20, height: 20, borderRadius: 6, background: on ? "var(--accent)" : "rgba(0,0,0,0.4)", border: "2px solid " + (on ? "var(--accent)" : "var(--muted)"), display: "flex", alignItems: "center", justifyContent: "center" }}>{on ? <Icon name="check" size={12} stroke={3} color="var(--accent-ink)" /> : null}</span>
         <span style={{ position: "absolute", left: 6, bottom: 5, fontSize: 10, fontWeight: 700, textShadow: "0 1px 3px rgba(0,0,0,0.6)" }}>{c.len.toFixed(1)}s</span>
       </button>
+      {canMute ? <button aria-label={(e.muted ? "Unmute" : "Mute") + " clip from " + fullDay(e.date)} aria-pressed={!!e.muted} onClick={mute} style={{ position: "absolute", right: 4, bottom: 4, width: 24, height: 24, borderRadius: 7, border: "none", padding: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", color: e.muted ? "var(--accent)" : "#F2EFE9" }}><Icon name={e.muted ? "mute" : "volume"} size={13} /></button> : null}
+      </div>
     );
   };
   return (

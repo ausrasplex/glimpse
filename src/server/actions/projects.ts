@@ -2,7 +2,7 @@ import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { schema } from "../db";
 import { id, token, sha256 } from "../ids";
 import { encrypt } from "../crypto";
-import { fail, notify, notifyAdmins, requireMember, requireOwner, membership } from "../core";
+import { fail, notify, notifyAdmins, requireMember, requireOwner, membership, sameCategory } from "../core";
 import { str, bool } from "../http";
 import { enqueue } from "../queue";
 import { sendMail } from "../mail";
@@ -42,7 +42,13 @@ export const saveProject: Action = async ({ db, user }, a) => {
     if (!used) cover = null;
   }
   await db.update(schema.projects).set({ name, desc: str(a.desc, 300).trim(), coverMediaId: cover }).where(eq(schema.projects.id, pid));
-  if (a.categoryId) { const c = await myCategory(db, user.id, str(a.categoryId, 60)); await db.update(schema.members).set({ categoryId: c.id }).where(eq(schema.members.id, mem.id)); }
+  if (a.categoryId) {
+    const c = await myCategory(db, user.id, str(a.categoryId, 60));
+    await db.update(schema.members).set({ categoryId: c.id }).where(eq(schema.members.id, mem.id));
+    // Everyone else in the project follows the owner's style.
+    const others = await db.select().from(schema.members).where(and(eq(schema.members.projectId, pid), ne(schema.members.id, mem.id)));
+    for (const o of others) if (o.userId) await db.update(schema.members).set({ categoryId: await sameCategory(db, o.userId, c) }).where(eq(schema.members.id, o.id));
+  }
 };
 
 // Personal to each member: category, pin, archive.

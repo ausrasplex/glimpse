@@ -47,6 +47,23 @@ export async function freestyleCategory(tx: Tx, userId: string): Promise<string 
   return any?.id ?? null;
 }
 
+// Categories belong to each person, so a shared project's style reaches a member as the same category in their own
+// list: matched by name, or copied in if they don't have it.
+export async function sameCategory(tx: Tx, userId: string, src: { name: string; color: string; daily: boolean }): Promise<string> {
+  const mine = await tx.select().from(schema.categories).where(eq(schema.categories.userId, userId));
+  const hit = mine.find((c) => c.name.toLowerCase() === src.name.toLowerCase());
+  if (hit) return hit.id;
+  const cid = id("c_");
+  await tx.insert(schema.categories).values({ id: cid, userId, name: src.name, color: src.color, daily: src.daily, sort: mine.length });
+  return cid;
+}
+// The category someone joining a project starts with: the owner's, else their own Freestyle.
+export async function joiningCategory(tx: Tx, projectId: string, userId: string): Promise<string | null> {
+  const owner = await tx.query.members.findFirst({ where: and(eq(schema.members.projectId, projectId), eq(schema.members.role, "OWNER")) });
+  const c = owner?.categoryId ? await tx.query.categories.findFirst({ where: eq(schema.categories.id, owner.categoryId) }) : null;
+  return c ? sameCategory(tx, userId, c) : freestyleCategory(tx, userId);
+}
+
 export async function membership(tx: Tx, projectId: string, userId: string) {
   return tx.query.members.findFirst({ where: and(eq(schema.members.projectId, projectId), eq(schema.members.userId, userId), eq(schema.members.status, "ACTIVE")) });
 }

@@ -113,7 +113,7 @@ export async function buildBootstrap(me: User) {
       invitedBy: m.invitedBy, invitedAt: ms(m.invitedAt), joinedAt: ms(m.joinedAt), lastViewed: ms(m.lastViewedAt)
     })),
     media: mediaRows.map((m) => mediaOut(m, m.ownerId === me.id)),
-    entries: entries.map((e) => ({ id: e.id, projectId: e.projectId, mediaId: e.mediaId, authorId: e.authorId, date: e.date, createdAt: ms(e.createdAt), note: e.note, mood: e.mood, trim: e.trimStart != null && e.trimEnd != null ? { start: e.trimStart, end: e.trimEnd } : null })),
+    entries: entries.map((e) => ({ id: e.id, projectId: e.projectId, mediaId: e.mediaId, authorId: e.authorId, date: e.date, createdAt: ms(e.createdAt), note: e.note, mood: e.mood, muted: e.muted, trim: e.trimStart != null && e.trimEnd != null ? { start: e.trimStart, end: e.trimEnd } : null })),
     mashes: mashes.map(mashOut),
     tracks: tracks.map((t) => ({ id: t.id, title: t.title, artist: t.artist, duration: t.duration, bpm: t.bpm, detectedBpm: t.detectedBpm, addedBy: t.addedBy, addedAt: ms(t.addedAt), size: t.size, format: t.format, lufs: t.lufs, status: t.status, peaks: t.peaks ?? null, src: t.playKey || t.key ? `/api/files/track/${t.id}` : null })),
     removalRequests: removalRequests.map((r) => ({ id: r.id, trackId: r.trackId, userId: r.userId, reason: r.reason, status: r.status, at: ms(r.createdAt) })),
@@ -128,11 +128,18 @@ export async function buildBootstrap(me: User) {
     prefs: { [me.id]: me.prefs },
     mashPicks: Object.fromEntries(picks.map((p) => [p.projectId, p.excluded])),
     invitesSentToday: { [me.id]: sentToday?.n ?? 0 },
+    pulse: await pulseOf(me.id),
     session: { userId: me.id }
   };
 }
 
 // What the sign-in, invite and setup pages get before anyone is signed in.
+// A small fingerprint of someone's notifications: it changes whenever they get a new one.
+export async function pulseOf(userId: string): Promise<string> {
+  const [r] = await db.select({ n: sql<number>`count(*)::int`, at: sql<string>`coalesce(max(${schema.notifications.createdAt})::text, '')` }).from(schema.notifications).where(eq(schema.notifications.userId, userId));
+  return r.n + "/" + r.at;
+}
+
 export async function publicBootstrap() {
   const settings = await getSettings();
   return {
@@ -160,8 +167,8 @@ async function adminData() {
   const q = await db.select({ id: schema.mashes.id, title: schema.mashes.title, ownerId: schema.mashes.ownerId, status: schema.mashes.status, progress: schema.mashes.progress, createdAt: schema.mashes.createdAt, ownerName: schema.users.name })
     .from(schema.mashes).innerJoin(schema.users, eq(schema.users.id, schema.mashes.ownerId)).where(or(eq(schema.mashes.status, "rendering"), eq(schema.mashes.status, "queued")));
   const shared = await db.execute(sql`select m.user_id as uid, count(*)::int as n from project_members m where m.status = 'ACTIVE' and (select count(*) from project_members o where o.project_id = m.project_id and o.status = 'ACTIVE') > 1 group by m.user_id`);
-  let worker = { ok: false, ffmpeg: null as string | null };
-  try { const hb = await redis().get("glimpse:worker"); const w = hb ? JSON.parse(hb) : null; if (w && Date.now() - w.at < 60e3) worker = { ok: true, ffmpeg: w.ffmpeg }; } catch { /* redis down */ }
+  let worker = { ok: false, ffmpeg: null as string | null, gpu: false, gpuNote: "" };
+  try { const hb = await redis().get("glimpse:worker"); const w = hb ? JSON.parse(hb) : null; if (w && Date.now() - w.at < 60e3) worker = { ok: true, ffmpeg: w.ffmpeg, gpu: !!w.gpu, gpuNote: w.gpuNote || "" }; } catch { /* redis down */ }
   let dataFree: string | null = null;
   try { const st = await statfs(env.dataDir); const b = st.bavail * st.bsize; dataFree = b >= 1e12 ? (b / 1e12).toFixed(1) + " TB" : Math.round(b / 1e9) + " GB"; } catch { dataFree = null; }
   // Free space where media is kept, in bytes; null on S3, where it can't be measured.

@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { schema } from "../db";
-import { fail, notify, freestyleCategory } from "../core";
+import { fail, notify, joiningCategory } from "../core";
 import { str, bool } from "../http";
 import type { Action } from "./types";
 
@@ -19,7 +19,7 @@ export const answerProjectInvite: Action = async ({ db, user }, a) => {
     const m = await tx.query.members.findFirst({ where: and(eq(schema.members.projectId, projectId), eq(schema.members.userId, user.id), eq(schema.members.status, "INVITED")) });
     if (!m) fail(404, "That invite isn't open any more.");
     if (accept) {
-      await tx.update(schema.members).set({ status: "ACTIVE", email: null, categoryId: await freestyleCategory(tx, user.id), pinned: false, archived: false, joinedAt: new Date(), lastViewedAt: new Date() }).where(eq(schema.members.id, m!.id));
+      await tx.update(schema.members).set({ status: "ACTIVE", email: null, categoryId: await joiningCategory(tx, projectId, user.id), pinned: false, archived: false, joinedAt: new Date(), lastViewedAt: new Date() }).where(eq(schema.members.id, m!.id));
       const p = await tx.query.projects.findFirst({ where: eq(schema.projects.id, projectId) });
       const others = await tx.select({ userId: schema.members.userId }).from(schema.members).where(and(eq(schema.members.projectId, projectId), eq(schema.members.status, "ACTIVE")));
       for (const o of others) if (o.userId && o.userId !== user.id) await notify(tx, o.userId, { type: "MEMBER_JOINED", title: `${user.name.split(" ")[0]} joined ${p?.name ?? "your project"}`, body: "Say hello with a clip", link: { route: "project", params: { projectId } } });

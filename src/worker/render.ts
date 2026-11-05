@@ -2,6 +2,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ffmpeg } from "./ff";
+import { h264 } from "./encode";
 import type { Shape } from "../shared/mash";
 import { stampLines } from "../shared/mash";
 import { labelText, type Stamp, type Label } from "../shared/textstyle";
@@ -16,6 +17,7 @@ export type Segment = {
   len: number;           // seconds in the mash
   orient: "portrait" | "landscape" | "square";
   hasAudio: boolean;
+  muted?: boolean;
   motion?: string | null;
   date: string; note: string;
   musicTitle?: string | null;
@@ -23,7 +25,7 @@ export type Segment = {
 };
 
 /** fonts: the font file for the stamp and the song title, and the fallbacks (Inter first) for characters a font lacks. */
-export type RenderOpts = { W: number; H: number; shape: Shape; fill: "blur" | "crop" | "bars"; stamp: Stamp; label: Label; clipAudio: boolean; fonts: { stamp: string; label: string; fallbacks: string[] }; crf: number };
+export type RenderOpts = { W: number; H: number; shape: Shape; fill: "blur" | "crop" | "bars"; stamp: Stamp; label: Label; clipAudio: boolean; gpu?: string | null; fonts: { stamp: string; label: string; fallbacks: string[] }; crf: number };
 
 // Filters that turn the input [in] into a W×H frame [fit] according to the fill rule.
 export function fitFilter(o: RenderOpts, orient: Segment["orient"], src = "in"): string {
@@ -52,7 +54,8 @@ export async function renderSegment(o: RenderOpts, seg: Segment, i: number, dir:
   const dur = (frames / FPS).toFixed(3);
   // The text PNG goes in as the last input; ov is its input number.
   let ov = 2;
-  const tail = (label: string) => (overlay ? `[${label}][${ov}:v]overlay=0:0:format=auto,format=yuv420p[v]` : `[${label}]format=yuv420p[v]`);
+  const enc = h264(o.gpu ?? null, o.crf, FPS);
+  const tail = (label: string) => (overlay ? `[${label}][${ov}:v]overlay=0:0:format=auto,format=yuv420p${enc.filter}[v]` : `[${label}]format=yuv420p${enc.filter}[v]`);
   let args: string[];
   if (seg.kind === "photo") {
     const z = seg.motion === "out" ? `1.12-0.12*on/${frames}` : seg.motion === "pan" ? "1.14" : seg.motion === "still" ? "1" : `1+0.12*on/${frames}`;
@@ -64,7 +67,7 @@ export async function renderSegment(o: RenderOpts, seg: Segment, i: number, dir:
     ].join(";");
     args = ["-i", seg.file, "-f", "lavfi", "-t", dur, "-i", "anullsrc=r=48000:cl=stereo", ...(overlay ? ["-i", overlay] : []), "-filter_complex", fc, "-map", "[v]", "-map", "1:a"];
   } else {
-    const useAudio = o.clipAudio && seg.hasAudio;
+    const useAudio = o.clipAudio && seg.hasAudio && !seg.muted;
     if (useAudio) ov = 1;
     const fc = [`[0:v]fps=${FPS}[in]`, fitFilter(o, seg.orient, "in"), tail("fit")].join(";");
     args = ["-ss", seg.start.toFixed(3), "-t", dur, "-i", seg.file];
@@ -73,9 +76,9 @@ export async function renderSegment(o: RenderOpts, seg: Segment, i: number, dir:
     args.push("-filter_complex", fc + (useAudio ? ";[0:a]aresample=48000,aformat=channel_layouts=stereo,apad[a]" : ""), "-map", "[v]", "-map", useAudio ? "[a]" : "1:a");
   }
   // Audio stays uncompressed (PCM in a .mov) until the final mix, so it's only AAC-encoded once, at the preset's bitrate.
-  args.push("-frames:v", String(frames), "-t", dur, "-c:v", "libx264", "-preset", "veryfast", "-crf", String(o.crf), "-pix_fmt", "yuv420p", "-r", String(FPS),
+  args.push("-frames:v", String(frames), "-t", dur, ...enc.video,
     "-c:a", "pcm_s16le", "-ar", "48000", "-ac", "2", "-video_track_timescale", "30000", "-f", "mov", out);
-  await ffmpeg(args, 20 * 60e3);
+  await ffmpeg([...enc.before, ...args], 20 * 60e3);
 }
 
 export async function concatSegments(files: string[], dir: string, out: string) {

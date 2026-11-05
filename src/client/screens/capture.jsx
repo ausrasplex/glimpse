@@ -232,7 +232,7 @@ function SourcePicker({ onFile, onPhoto, date }) {
 // Filmstrip with a draggable window: grab either end to trim, the middle to slide it.
 const MIN_LEN = 0.5;
 const LENGTHS = [1, 1.5, 2, 2.5];
-function TrimStrip({ frames, grad, n, dur, start, len, maxLen, onChange }) {
+function TrimStrip({ frames, grad, n, dur, start, len, maxLen, onChange, headRef }) {
   const MAX_LEN = maxLen || 10;
   const ref = useRef(null);
   const end = start + len;
@@ -268,6 +268,8 @@ function TrimStrip({ frames, grad, n, dur, start, len, maxLen, onChange }) {
           return <button key={i} aria-label={"Jump to " + fmtSec(t0)} onClick={() => onChange({ start: +Math.min(t0, dur - len).toFixed(1) })} style={{ height: 64, border: "none", padding: 0, background: frames[i] || grad, opacity: inSel ? 1 : 0.35 }} />;
         })}
       </div>
+      {/* Where playback is along the strip; moved directly by the player, frame by frame. */}
+      <div ref={headRef} aria-hidden="true" style={{ position: "absolute", top: -3, bottom: -3, left: (start / dur * 100) + "%", width: 2, marginLeft: -1, borderRadius: 1, background: "#FFFFFF", boxShadow: "0 0 4px rgba(0,0,0,0.7)", pointerEvents: "none", zIndex: 2 }} />
       <div onPointerDown={begin("move")} style={{ position: "absolute", top: 0, bottom: 0, left: (start / dur * 100) + "%", width: (len / dur * 100) + "%", border: "3px solid var(--accent)", borderLeftWidth: 0, borderRightWidth: 0, boxSizing: "border-box", cursor: "grab", touchAction: "none" }}>
         <button role="slider" aria-label="Start" aria-valuemin={0} aria-valuemax={dur} aria-valuenow={+start.toFixed(1)} aria-valuetext={fmtSec(start)} onPointerDown={begin("start")} onKeyDown={key("start")} style={handle("left")}>{grip}</button>
         <button role="slider" aria-label="End" aria-valuemin={0} aria-valuemax={dur} aria-valuenow={+end.toFixed(1)} aria-valuetext={fmtSec(end)} onPointerDown={begin("end")} onKeyDown={key("end")} style={handle("right")}>{grip}</button>
@@ -283,6 +285,7 @@ export function Trim({ params }) {
   const [playing, setPlaying] = useState(true);
   const [scope, setScope] = useState("project");
   const [busy, setBusy] = useState(false);
+  const head = useRef(null);
   const d = draft || {};
   const media = d.mediaId ? S.media(db, d.mediaId) : null;
   const waiting = d.source === "server" && !(media && media.status === "READY" && d.duration);
@@ -425,6 +428,11 @@ export function Trim({ params }) {
   const isPhoto = d.kind === "photo";
   const m = isPhoto ? { kind: "photo", motion: d.motion, thumb: d.thumb || (media && media.thumb), grad: d.grad }
     : { grad: frames.length ? frames[Math.min(n - 1, Math.floor(start / cell))] : d.grad, liveId: d.source === "file" ? d.liveId : null, src: media ? media.src : null, thumb: null };
+  const tick = (t) => { if (head.current && dur > 0) head.current.style.left = clamp(t / dur * 100, 0, 100) + "%"; };
+  // The banner about the filmed day needs room: a smaller preview keeps the trim strip and length buttons on screen.
+  const banner = !editing && !replacing && filmedOffer(db, d);
+  const box = ORIENT_BOX[d.orient || "portrait"];
+  const shrink = banner ? (d.orient === "landscape" ? 1 : d.orient === "square" ? 0.72 : 0.62) : 1;
   const othersClip = editing && editing.authorId !== me.id;
   const upPct = d.uploadPct == null ? null : d.uploadPct;
 
@@ -472,9 +480,9 @@ export function Trim({ params }) {
       {!editing && !replacing ? <Steps n={1} of={2} /> : null}
       <div className="scroll">
         <div style={{ display: "flex", justifyContent: "center", padding: "20px 0 0" }}>
-          <ClipView m={m} start={start} end={end} playing={playing} loop style={{ width: ORIENT_BOX[d.orient || "portrait"].w, height: ORIENT_BOX[d.orient || "portrait"].h, maxWidth: "calc(100vw - 40px)", borderRadius: 18 }}>
+          <ClipView m={m} start={start} end={end} playing={playing} loop onClock={tick} muted={!!(editing && editing.muted)} style={{ width: Math.round(box.w * shrink), height: Math.round(box.h * shrink), maxWidth: "calc(100vw - 40px)", borderRadius: 18 }}>
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.55), transparent 45%)", pointerEvents: "none" }} />
-            <span className="hrow gap6" style={{ position: "absolute", top: 12, left: 12, padding: "3px 9px", borderRadius: 12, background: "rgba(0,0,0,0.5)", fontSize: 11, fontWeight: 600 }}><Icon name={isPhoto ? "image" : "repeat"} size={11} />{isPhoto ? "Photo · plays as a clip" : "Looping selection"}</span>
+            {shrink === 1 ? <span className="hrow gap6" style={{ position: "absolute", top: 12, left: 12, padding: "3px 9px", borderRadius: 12, background: "rgba(0,0,0,0.5)", fontSize: 11, fontWeight: 600 }}><Icon name={isPhoto ? "image" : "repeat"} size={11} />{isPhoto ? "Photo · plays as a clip" : "Looping selection"}</span> : null}
             <button aria-label={playing ? "Pause" : "Play"} onClick={() => setPlaying(!playing)} style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: 52, height: 52, borderRadius: "50%", background: "rgba(0,0,0,0.4)", border: "none", display: "flex", alignItems: "center", justifyContent: "center", color: "#F2EFE9", opacity: playing ? 0.35 : 1 }}><Icon name={playing ? "pause" : "play"} size={20} /></button>
             <span className="hrow between num" style={{ position: "absolute", left: 12, right: 12, bottom: 12, fontSize: 12, fontWeight: 700 }}><span>{isPhoto ? "" : fmtSec(start)}</span><span style={{ color: "var(--accent)" }}>{len.toFixed(1)}s</span></span>
           </ClipView>
@@ -507,7 +515,7 @@ export function Trim({ params }) {
         ) : (
           <div className="pad" style={{ paddingTop: 22 }}>
             <div className="hrow between" style={{ alignItems: "baseline", marginBottom: 10 }}><span className="sec">Drag the ends to trim</span><span className="small muted num">{fmtSec(start)} – {fmtSec(end)} · of {fmtSec(dur)}</span></div>
-            <TrimStrip frames={frames} grad={d.grad} n={n} dur={dur} start={start} len={len} maxLen={clipMaxOf(db.server.clipLimit)} onChange={(o) => setDraft((cur) => Object.assign({}, cur, o))} />
+            <TrimStrip frames={frames} grad={d.grad} n={n} dur={dur} start={start} len={len} maxLen={clipMaxOf(db.server.clipLimit)} headRef={head} onChange={(o) => setDraft((cur) => Object.assign({}, cur, o))} />
             <div className="stack gap8" style={{ marginTop: 16 }}>
               <div className="hrow between" style={{ alignItems: "baseline" }}><span className="sec">Quick length</span><span className="small faint">Keeps your start, moves the end</span></div>
               <Opts value={LENGTHS.indexOf(+len.toFixed(1)) >= 0 ? +len.toFixed(1) : null} onChange={(l) => set({ len: Math.min(l, dur), start: Math.min(start, Math.max(0, dur - l)) })} options={LENGTHS.map((l) => ({ id: l, label: l + "s", disabled: l > dur }))} />

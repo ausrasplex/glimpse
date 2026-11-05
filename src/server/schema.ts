@@ -123,6 +123,7 @@ export const entries = pgTable("entries", {
   mood: text("mood"),
   trimStart: real("trim_start"),
   trimEnd: real("trim_end"),
+  muted: boolean("muted").notNull().default(false),
   createdAt: ts("created_at").notNull().defaultNow()
 }, (t) => [index("entries_project_date_idx").on(t.projectId, t.date), index("entries_media_idx").on(t.mediaId)]);
 

@@ -25,6 +25,9 @@ services:
     volumes:
       - ./data:/data
       - ./media:/media
+    # GPU encoding (AMD or Intel): uncomment to pass the GPU in. Settings › Rendering shows whether it works.
+    # devices:
+    #   - /dev/dri:/dev/dri
     depends_on: [postgres, redis]
 
   postgres:

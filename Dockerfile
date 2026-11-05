@@ -28,7 +28,8 @@ ENV NODE_ENV=production \
     PUID=99 \
     PGID=100 \
     TZ=UTC
-RUN apk add --no-cache ffmpeg libheif-tools postgresql17-client su-exec tini tzdata shadow
+# mesa-va-gallium: the AMD driver for GPU encoding (Intel needs intel-media-driver as well, on x86-64).
+RUN apk add --no-cache ffmpeg libheif-tools postgresql17-client su-exec tini tzdata shadow mesa-va-gallium
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public

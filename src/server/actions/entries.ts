@@ -50,10 +50,11 @@ export const saveCapture: Action = async ({ db, user, settings }, a) => {
     await setClip(tx, m, a, settings.clipLimit);
     const before = await snapshot(tx, projectIds, user.tz);
     for (const pid of projectIds) {
-      await tx.insert(schema.entries).values({ id: id("e_"), projectId: pid, mediaId: m.id, authorId: user.id, date, note, mood: moodLabel });
+      const eid = id("e_");
+      await tx.insert(schema.entries).values({ id: eid, projectId: pid, mediaId: m.id, authorId: user.id, date, note, mood: moodLabel });
       const p = await tx.query.projects.findFirst({ where: eq(schema.projects.id, pid) });
       const others = await tx.select({ userId: schema.members.userId }).from(schema.members).where(and(eq(schema.members.projectId, pid), eq(schema.members.status, "ACTIVE")));
-      for (const o of others) if (o.userId && o.userId !== user.id) await notify(tx, o.userId, { type: "NEW_CLIPS", title: `${user.name.split(" ")[0]} added a clip to ${p!.name}`, body: note || "Tap to see it", link: { route: "project", params: { projectId: pid } } });
+      for (const o of others) if (o.userId && o.userId !== user.id) await notify(tx, o.userId, { type: "NEW_CLIPS", title: `${user.name.split(" ")[0]} added a clip to ${p!.name}`, body: note || "Tap to see it", link: { route: "entry", params: { entryId: eid } } });
     }
     // A mood typed in for the first time joins the person's mood list.
     if (moodLabel) {
@@ -118,6 +119,15 @@ export const editEntry: Action = async ({ db, user }, a) => {
   }
 };
 
+// Mute a clip in this project: silent when played, and left out of a mash's sound. Author or project owner.
+export const setEntryMuted: Action = async ({ db, user }, a) => {
+  const e = await db.query.entries.findFirst({ where: eq(schema.entries.id, str(a.entryId, 60)) });
+  if (!e) fail(404, "That entry wasn't found.");
+  const mem = await requireMember(db, e!.projectId, user.id);
+  if (e!.authorId !== user.id && mem.role !== "OWNER") fail(403, "Only the person who filmed it, or the project owner, can mute this clip.");
+  await db.update(schema.entries).set({ muted: bool(a.muted) }).where(eq(schema.entries.id, e!.id));
+};
+
 // Move one project's entry to another day. Owners can move anyone's clip in their project.
 export const moveEntry: Action = async ({ db, user }, a) => {
   const e = await db.query.entries.findFirst({ where: eq(schema.entries.id, str(a.entryId, 60)) });
@@ -150,7 +160,7 @@ export const restoreEntry: Action = async ({ db, user }, a) => {
   if (!isDayKey(r.date)) fail(400, "Bad entry.");
   await db.insert(schema.entries).values({
     id: str(r.id, 60) || id("e_"), projectId, mediaId, authorId, date: r.date as string, note: str(r.note, 500), mood: str(r.mood, 40) || null,
-    trimStart: typeof r.trimStart === "number" ? r.trimStart : null, trimEnd: typeof r.trimEnd === "number" ? r.trimEnd : null, createdAt: new Date(Number(r.createdAt) || Date.now())
+    trimStart: typeof r.trimStart === "number" ? r.trimStart : null, trimEnd: typeof r.trimEnd === "number" ? r.trimEnd : null, muted: r.muted === true, createdAt: new Date(Number(r.createdAt) || Date.now())
   }).onConflictDoNothing();
 };
 
@@ -175,7 +185,7 @@ export const setEntryProjects: Action = async ({ db, user }, a) => {
     for (const c of cur) if (!want.includes(c.projectId)) await tx.delete(schema.entries).where(eq(schema.entries.id, c.id));
     const before = await snapshot(tx, want, user.tz);
     for (const pid of want) if (!cur.find((c) => c.projectId === pid)) {
-      await tx.insert(schema.entries).values({ id: id("e_"), projectId: pid, mediaId: e!.mediaId, authorId: user.id, date: e!.date, note: e!.note, mood: e!.mood });
+      await tx.insert(schema.entries).values({ id: id("e_"), projectId: pid, mediaId: e!.mediaId, authorId: user.id, date: e!.date, note: e!.note, mood: e!.mood, muted: e!.muted });
       await checkMilestones(tx, pid, before[pid], user.tz);
     }
   });

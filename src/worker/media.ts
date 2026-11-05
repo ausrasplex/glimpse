@@ -10,7 +10,8 @@ import { downloadTo, putFile, keys, putStream } from "../server/storage";
 import { getSettings } from "../server/settings";
 import { decrypt } from "../server/crypto";
 import { env } from "../server/env";
-import { ffmpeg, probe, orientOf, run } from "./ff";
+import { ffmpeg, probe, orientOf, run, gpuFor } from "./ff";
+import { h264, withGpu } from "./encode";
 import { takenDayFrom } from "../shared/dates";
 import { embeddedVideoAt } from "../shared/media";
 
@@ -120,12 +121,15 @@ export async function processMedia(mediaId: string) {
     const short = s.playback === "1080" ? 1080 : 720;
     const playback = join(dir, "playback.mp4");
     // Playback copy: H.264/AAC that every browser plays. ffmpeg applies the rotation tag itself.
-    await ffmpeg([
-      "-i", orig, "-map", "0:v:0", "-map", "0:a:0?",
-      "-vf", `scale='if(gt(iw,ih),-2,min(${short},iw))':'if(gt(iw,ih),min(${short},ih),-2)',format=yuv420p`,
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-profile:v", "high", "-r", "30",
-      "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-movflags", "+faststart", playback
-    ], 60 * 60e3);
+    await withGpu(await gpuFor("playback", s.gpu), (device) => {
+      const enc = h264(device, 24, 30);
+      return ffmpeg([
+        ...enc.before, "-i", orig, "-map", "0:v:0", "-map", "0:a:0?",
+        "-vf", `scale='if(gt(iw,ih),-2,min(${short},iw))':'if(gt(iw,ih),min(${short},ih),-2)',format=yuv420p${enc.filter}`,
+        ...enc.video,
+        "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-movflags", "+faststart", playback
+      ], 60 * 60e3);
+    });
     await setMedia(mediaId, { progress: 70 });
     const poster = join(dir, "poster.jpg");
     const at = Math.min(Math.max(0, m.clipStart || p.duration * 0.2), Math.max(0, p.duration - 0.1));

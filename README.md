@@ -118,7 +118,14 @@ Restore: create an empty database and run `pg_restore --no-owner -d "$DATABASE_U
 | `TZ` | no | Server timezone (backups, default for new people) |
 | `PUID` / `PGID` | no | File owner for `/data` (Unraid: 99/100) |
 | `GLIMPSE_WORKER` | no | `false` to run the web app only (run a second container with it `true` for a separate worker) |
+| `GPU_DEVICE` | no | GPU for hardware encoding. Default `/dev/dri/renderD128` |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | no | Single sign-on from the environment |
+
+### GPU encoding
+
+Video work runs on the CPU unless a GPU is available. To use an AMD GPU, pass `/dev/dri` to the container (Unraid: the **GPU** field, or add a Device; Compose: `devices`). The host needs its GPU driver loaded: `ls /dev/dri` should show `renderD128`.
+
+The worker tests the GPU when it starts. **Settings › Rendering** shows the result and sets what uses it: off, playback copies (the default), or playback copies and mashes. If the GPU fails on a video, that video is redone on the CPU.
 
 ## Development
 

@@ -1,5 +1,6 @@
 // Thin wrappers around ffmpeg / ffprobe.
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 
 export function run(cmd: string, args: string[], opts: { timeoutMs?: number; input?: string } = {}): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -64,6 +65,26 @@ export async function probe(file: string): Promise<Probe> {
 }
 
 export const orientOf = (w: number, h: number) => (!w || !h ? "portrait" : Math.abs(w - h) / Math.max(w, h) < 0.08 ? "square" : w > h ? "landscape" : "portrait");
+
+// GPU encoding: the device, if a short test encode works on it. Checked once, when first needed.
+export type Gpu = { device: string | null; note: string };
+let gpu: Promise<Gpu> | null = null;
+export function gpuInfo(): Promise<Gpu> {
+  gpu ??= (async () => {
+    const device = process.env.GPU_DEVICE || "/dev/dri/renderD128";
+    if (!existsSync(device)) return { device: null, note: "No GPU passed to this container" };
+    try {
+      await ffmpeg(["-vaapi_device", device, "-f", "lavfi", "-i", "testsrc2=s=320x240:r=30:d=0.2", "-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-f", "null", "-"], 30e3);
+      return { device, note: "GPU encoding ready on " + device };
+    } catch (e) { return { device: null, note: "Found " + device + ", but it couldn't encode: " + (e as Error).message.slice(0, 160) }; }
+  })();
+  return gpu;
+}
+/** The GPU to use for this kind of work under the Settings choice, or null for the CPU. */
+export async function gpuFor(use: "playback" | "mash", mode: "off" | "playback" | "all"): Promise<string | null> {
+  if (mode === "off" || (use === "mash" && mode !== "all")) return null;
+  return (await gpuInfo()).device;
+}
 
 export async function ffmpegVersion(): Promise<string> {
   try { const { stdout } = await run("ffmpeg", ["-version"], { timeoutMs: 10e3 }); const m = /ffmpeg version (\S+)/.exec(stdout); return "FFmpeg " + (m ? m[1].replace(/-.*/, "") : ""); }

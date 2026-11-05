@@ -18,6 +18,8 @@ if [ "$(id -u)" = "0" ]; then
     mkdir -p "$MEDIA"
     if [ "$(stat -c %u "$MEDIA")" = "0" ]; then chown "$PUID:$PGID" "$MEDIA" 2>/dev/null || true; fi
   fi
+  # GPU encoding: let the app's user open a GPU passed in with --device /dev/dri. Only changes this container's copy.
+  for d in /dev/dri/renderD*; do if [ -e "$d" ]; then chmod a+rw "$d" 2>/dev/null || true; fi; done
   exec su-exec "$PUID:$PGID" "$@"
 fi
 exec "$@"
