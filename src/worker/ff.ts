@@ -1,12 +1,13 @@
 // Thin wrappers around ffmpeg / ffprobe.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { redis } from "../server/queue";
 
-export function run(cmd: string, args: string[], opts: { timeoutMs?: number; input?: string } = {}): Promise<{ stdout: string; stderr: string }> {
+export function run(cmd: string, args: string[], opts: { timeoutMs?: number; input?: string; onOut?: (text: string) => void } = {}): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const p = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "", stderr = "";
-    p.stdout.on("data", (d) => { stdout += d; if (stdout.length > 50e6) stdout = stdout.slice(-50e6); });
+    p.stdout.on("data", (d) => { stdout += d; if (stdout.length > 50e6) stdout = stdout.slice(-50e6); if (opts.onOut) opts.onOut(String(d)); });
     p.stderr.on("data", (d) => { stderr += d; if (stderr.length > 200e3) stderr = stderr.slice(-200e3); });
     const t = opts.timeoutMs ? setTimeout(() => p.kill("SIGKILL"), opts.timeoutMs) : null;
     p.on("error", reject);
@@ -65,6 +66,21 @@ export async function probe(file: string): Promise<Probe> {
 }
 
 export const orientOf = (w: number, h: number) => (!w || !h ? "portrait" : Math.abs(w - h) / Math.max(w, h) < 0.08 ? "square" : w > h ? "landscape" : "portrait");
+
+// ffmpeg, reporting how far through a video of \`seconds\` it is (0..1), every couple of seconds.
+export function ffmpegProgress(args: string[], seconds: number, onProgress: (done: number) => void, timeoutMs = 30 * 60e3) {
+  let last = 0;
+  const onOut = (text: string) => {
+    const hits = [...text.matchAll(/out_time_us=(\d+)/g)];
+    if (!hits.length || !seconds || Date.now() - last < 2000) return;
+    last = Date.now();
+    onProgress(Math.min(1, Number(hits[hits.length - 1][1]) / 1e6 / seconds));
+  };
+  return run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-nostats", "-progress", "pipe:1", ...args], { timeoutMs, onOut });
+}
+
+// Which encoder a job is on, for the queue in Settings.
+export const noteEncoder = (jobId: string, device: string | null) => redis().set("glimpse:encoder:" + jobId, device ? "GPU" : "CPU", "EX", 6 * 3600).catch(() => undefined);
 
 // GPU encoding: the device, if a short test encode works on it. Checked once, when first needed.
 export type Gpu = { device: string | null; note: string };

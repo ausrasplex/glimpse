@@ -7,7 +7,7 @@ import { downloadTo, putFile, keys, deleteKeys } from "../server/storage";
 import { getSettings } from "../server/settings";
 import { notify } from "../server/core";
 import { QUALITY, qualityOf, OUTPUT, STAMP_DEFAULT, segmentLen, extendWindow, type MashSettings } from "../shared/mash";
-import { ffmpeg, probe, gpuFor } from "./ff";
+import { ffmpeg, probe, gpuFor, noteEncoder } from "./ff";
 import { ensureFont, fontPath, fallbackNotes } from "../server/fonts";
 import { cleanStamp, cleanLabel, matched, DEFAULT_FONT } from "../shared/textstyle";
 import { tmpDir } from "./media";
@@ -84,6 +84,7 @@ export async function renderMash(mashId: string) {
     }
 
     const opts = { W, H, shape: st.shape, fill: st.fill, stamp, label, clipAudio: st.audio !== "music", fonts, crf: q.crf, gpu: await gpuFor("mash", s.gpu) };
+    noteEncoder(mashId, opts.gpu);
     const files: string[] = [];
     for (let i = 0; i < segs.length; i++) {
       const f = join(dir, `seg${String(i).padStart(4, "0")}.mov`);
@@ -93,6 +94,7 @@ export async function renderMash(mashId: string) {
         // Segments are joined without re-encoding, so they must all come from one encoder: start again on the CPU.
         console.error("[gpu] mash encoding failed, starting again on the CPU:", (e as Error).message.slice(0, 300));
         opts.gpu = null; files.length = 0; i = -1;
+        noteEncoder(mashId, null);
         continue;
       }
       files.push(f);

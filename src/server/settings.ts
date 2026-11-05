@@ -11,7 +11,7 @@ export type SsoSettings = {
 export type ServerSettings = {
   setupDone: boolean; name: string; tz: string;
   userInvites: boolean; perDay: number; defaultQuota: number; warnAt: number;
-  concurrency: number; maxRes: "720" | "1080" | "4k"; playback: "720" | "1080"; gpu: "off" | "playback" | "all"; mashQuality: "smaller" | "high" | "best";
+  concurrency: number; maxRes: "720" | "1080" | "4k"; playback: "720" | "1080"; gpu: "off" | "playback" | "all"; privacy: "shared" | "private"; mashQuality: "smaller" | "high" | "best";
   musicUploads: boolean; loudness: boolean; trackSize: number; formats: Record<string, boolean>;
   /** Longer clips: off keeps the 10 second cap; max is seconds, 0 for no limit. */
   clipLimit: { on: boolean; max: number };
@@ -27,7 +27,7 @@ export type ServerSettings = {
 export const DEFAULTS: ServerSettings = {
   setupDone: false, name: "Home Server", tz: process.env.TZ || "UTC",
   userInvites: false, perDay: 5, defaultQuota: 5, warnAt: 90,
-  concurrency: 1, maxRes: "1080", playback: "720", gpu: "playback", mashQuality: "high",
+  concurrency: 1, maxRes: "1080", playback: "720", gpu: "playback", privacy: "shared", mashQuality: "high",
   musicUploads: true, loudness: true, trackSize: 50, formats: { MP3: true, M4A: true, WAV: true, FLAC: true },
   clipLimit: { on: false, max: 60 }, googleFonts: true,
   email: { host: "", port: "587", user: "", passEnc: null, from: "", ok: false },

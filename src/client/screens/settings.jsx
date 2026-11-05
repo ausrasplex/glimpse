@@ -267,6 +267,8 @@ function AdminSettings({ initialOpen }) {
     return n < 1 ? "Less than " + q + " GB is free, so a new person couldn't fill their limit." : "Room for about " + n.toLocaleString() + " more " + (n === 1 ? "person" : "people") + " at " + q + " GB each, with " + gb(free) + " free now.";
   };
   const queue = (admin.queue || []).slice().sort((a, b) => a.createdAt - b.createdAt);
+  const preparing = admin.preparing || [];
+  const jobs = queue.length + preparing.length;
   const users = db.users.filter((u) => !u.deleted);
   const nAdmins = users.filter((u) => u.role === "ADMIN").length;
   return (
@@ -300,7 +302,7 @@ function AdminSettings({ initialOpen }) {
           </div>
         ) : null}
       </Acc>
-      <Acc id="render" open={open} setOpen={setOpen} icon="mash" title="Rendering" sub={(queue.length ? queue.length + " in queue" : "Idle") + " · " + (admin.worker && admin.worker.ok ? "worker running" : "worker not running")}>
+      <Acc id="render" open={open} setOpen={setOpen} icon="mash" title="Rendering" sub={(jobs ? jobs + " in queue" : "Idle") + " · " + (admin.worker && admin.worker.ok ? "worker running" : "worker not running")}>
         {admin.worker && !admin.worker.ok ? <span style={{ padding: "10px 12px", borderRadius: 10, background: "rgba(224,120,110,0.1)", border: "1px solid rgba(224,120,110,0.35)", fontSize: 12, color: "#F0A49C", lineHeight: 1.4 }}>The render worker isn't running, so uploads and mashes will wait. Check the container log, and that GLIMPSE_WORKER is true.</span> : null}
         <div className="hrow between gap12"><span className="stack gap2"><span style={{ fontSize: 13.5, fontWeight: 600 }}>Renders at once</span><span className="small muted">More = faster queue, busier server</span></span><Stepper value={srv.concurrency} min={1} max={4} label="renders at once" onChange={(v) => setSrv({ concurrency: v }, 400)} /></div>
         <div className="stack gap6"><span className="sec">Playback copies</span><Opts value={srv.playback || "720"} onChange={(v) => setSrv({ playback: v })} options={[{ id: "720", label: "720p" }, { id: "1080", label: "1080p" }]} /><span className="small muted" style={{ lineHeight: 1.4 }}>Every upload gets a small H.264 copy so it plays in any browser, including iPhone HEVC videos. Originals are kept untouched for mashes. Adds about {srv.playback === "1080" ? "25" : "10"}% to clip storage.</span></div>
@@ -318,14 +320,25 @@ function AdminSettings({ initialOpen }) {
           {queue.map((j, i) => {
             const running = j.status === "rendering";
             return (
-              <div key={j.id} role="progressbar" aria-label={j.title + (running ? " rendering" : " queued")} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(j.progress)} className="hrow gap10" style={{ padding: "10px 12px", borderRadius: 11, background: running ? "linear-gradient(to right, var(--accent-soft) " + j.progress + "%, #161513 " + j.progress + "%)" : "#161513", border: "1px solid " + (running ? "var(--accent)" : "var(--line-soft)") }}>
-                <span className="stack gap2" style={{ flex: 1, minWidth: 0 }}><span className="ellipsis" style={{ fontSize: 13, fontWeight: 600 }}>{j.title}</span><span className="tiny" style={{ color: running ? "#BDB7AD" : "var(--faint)" }}>{j.ownerId === me.id ? "You" : j.ownerName} · {running ? "rendering" : "queued · #" + (i + 1)}</span></span>
+              <div key={j.id} role="progressbar" aria-label={(j.title || "A mash") + (running ? " rendering" : " queued")} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(j.progress)} className="hrow gap10" style={{ padding: "10px 12px", borderRadius: 11, background: running ? "linear-gradient(to right, var(--accent-soft) " + j.progress + "%, #161513 " + j.progress + "%)" : "#161513", border: "1px solid " + (running ? "var(--accent)" : "var(--line-soft)") }}>
+                <span className="stack gap2" style={{ flex: 1, minWidth: 0 }}><span className="ellipsis" style={{ fontSize: 13, fontWeight: 600 }}>{j.title || "A mash"}</span><span className="tiny" style={{ color: running ? "#BDB7AD" : "var(--faint)" }}>{j.ownerId === me.id ? "You" : j.ownerName || "Someone"} · {running ? "rendering" + (j.encoder ? " on the " + j.encoder : "") : "queued · #" + (i + 1)}</span></span>
                 {running ? <span className="num" style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{Math.round(j.progress)}%</span> : null}
                 <button className="chipbtn" style={{ background: "transparent", color: "var(--muted)", fontSize: 12 }} onClick={() => act("adminCancelRender", { mashId: j.id }).then(() => toast("Render cancelled")).catch(() => {})}>Cancel</button>
               </div>
             );
           })}
-          {!queue.length ? <span className="small muted">Nothing rendering right now.</span> : null}
+          {preparing.map((j) => {
+            // A Shared server sends just when and how far; a Private one sends the person and file too.
+            const running = j.progress > 0;
+            const when = new Date(j.at).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+            return (
+              <div key={j.id} role="progressbar" aria-label={"Preparing a " + (j.kind === "photo" ? "photo" : "video") + " uploaded " + when} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(j.progress)} className="stack gap2" style={{ padding: "10px 12px", borderRadius: 11, background: running ? "linear-gradient(to right, var(--accent-soft) " + j.progress + "%, #161513 " + j.progress + "%)" : "#161513", border: "1px solid var(--line-soft)" }}>
+                <span className="ellipsis" style={{ fontSize: 13, fontWeight: 600 }}>{j.fileName || (j.kind === "photo" ? "Photo" : "Playback copy") + " · uploaded " + when}</span>
+                <span className="tiny" style={{ color: running ? "#BDB7AD" : "var(--faint)" }}>{j.ownerName ? j.ownerName + " · " : ""}{j.fileName ? when + " · " : ""}{running ? Math.round(j.progress) + "%" + (j.encoder ? " · on the " + j.encoder : "") : "Waiting"}</span>
+              </div>
+            );
+          })}
+          {!jobs ? <span className="small muted">Nothing rendering right now.</span> : null}
         </div>
       </Acc>
       <Acc id="music" open={open} setOpen={setOpen} icon="music" title="Music" sub={(removals.length ? removals.length + " removal request" + (removals.length > 1 ? "s" : "") + " · " : "") + "uploads " + (srv.musicUploads ? "open to all" : "admins only")} badge={<Count n={removals.length} />}>
@@ -368,6 +381,11 @@ function AdminSettings({ initialOpen }) {
       </Acc>
       <Acc id="server" open={open} setOpen={setOpen} icon="server" title="Server" sub={srv.name + " · Glimpse " + srv.version}>
         <div className="field"><label className="sec" htmlFor="srv-name">Server name</label><input id="srv-name" className="input" style={inStyle} value={srv.name} onChange={(e) => setSrv({ name: e.target.value.slice(0, 60) }, 700)} onBlur={(e) => { if (!e.target.value.trim()) setSrv({ name: "Home Server" }); }} /><span className="small muted">Shown on the sign-in page and in emails.</span></div>
+        <div className="stack gap6">
+          <span className="sec">Server type</span>
+          <Opts value={srv.privacy === "private" ? "private" : "shared"} onChange={(v) => setSrv({ privacy: v })} options={[{ id: "shared", label: "Shared" }, { id: "private", label: "Private" }]} />
+          <span className="small muted" style={{ lineHeight: 1.4 }}>{srv.privacy === "private" ? "Just for you, or people you trust. Admins see names and file names in the Rendering queue." : "Used by other people too. Admins see that work is running, but not whose it is or what it's called."}</span>
+        </div>
         <div className="stack gap6"><span className="sec">Sign-in background</span><Opts value={srv.loginBg === "still" ? "still" : "drift"} onChange={(v) => setSrv({ loginBg: v })} options={[{ id: "drift", label: "Slow drift" }, { id: "still", label: "Still" }]} /><span className="small muted">Palette tiles only. Real clips are never shown on the public sign-in page. Drift also stops for anyone with reduce motion turned on.</span></div>
         <div className="field"><span className="sec">Public web address</span><div className="input" style={Object.assign({}, inStyle, { color: "#BDB7AD" })}>{srv.url}</div><span className="small muted">Set by APP_URL in the container's settings. Used in invite links, emails and the SSO redirect.</span></div>
         <div className="field"><span className="sec">Default timezone</span><TimezonePicker value={srv.tz} onChange={(v) => setSrv({ tz: v })} detected={detectedZone()} /><span className="small muted">Used for scheduled backups and as a starting point for new people.</span></div>

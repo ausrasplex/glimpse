@@ -95,7 +95,7 @@ export async function buildBootstrap(me: User) {
   const [sentToday] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.members).where(and(eq(schema.members.invitedBy, me.id), sql`${schema.members.invitedAt} > now() - interval '1 day'`));
 
   const adminRow = await db.query.users.findFirst({ where: and(eq(schema.users.role, "ADMIN"), eq(schema.users.disabled, false)) });
-  const adminExtra = admin ? await adminData() : undefined;
+  const adminExtra = admin ? await adminData(me.id) : undefined;
   const moods: Record<string, unknown[]> = {};
   for (const m of moodRows) (moods[m.userId] ??= []).push({ id: m.id, label: m.label, color: m.color, preset: m.preset, hidden: m.hidden });
 
@@ -151,7 +151,7 @@ export async function publicBootstrap() {
 }
 
 // Server-wide numbers only admins see: storage per person, the render queue, worker health.
-async function adminData() {
+async function adminData(meId: string) {
   const { redis } = await import("./queue");
   const { statfs } = await import("node:fs/promises");
   const { env } = await import("./env");
@@ -166,6 +166,13 @@ async function adminData() {
   totals.music += Number(tm[0]?.s || 0);
   const q = await db.select({ id: schema.mashes.id, title: schema.mashes.title, ownerId: schema.mashes.ownerId, status: schema.mashes.status, progress: schema.mashes.progress, createdAt: schema.mashes.createdAt, ownerName: schema.users.name })
     .from(schema.mashes).innerJoin(schema.users, eq(schema.users.id, schema.mashes.ownerId)).where(or(eq(schema.mashes.status, "rendering"), eq(schema.mashes.status, "queued")));
+  // Videos being prepared. On a Shared server an admin only sees when and how far: whose clip it is stays private.
+  // On a Private server (just you, or people you trust) the queue names the person and the file too.
+  const open = (await getSettings()).privacy === "private";
+  const prep = await db.select({ id: schema.media.id, kind: schema.media.kind, at: schema.media.createdAt, progress: schema.media.progress, fileName: schema.media.fileName, ownerName: schema.users.name }).from(schema.media).innerJoin(schema.users, eq(schema.users.id, schema.media.ownerId)).where(eq(schema.media.status, "PROCESSING")).orderBy(schema.media.createdAt);
+  const jobs = [...q.map((x) => x.id), ...prep.map((x) => x.id)];
+  const encoders: Record<string, string | null> = {};
+  try { if (jobs.length) (await redis().mget(...jobs.map((id) => "glimpse:encoder:" + id))).forEach((v, i) => { encoders[jobs[i]] = v; }); } catch { /* redis down */ }
   const shared = await db.execute(sql`select m.user_id as uid, count(*)::int as n from project_members m where m.status = 'ACTIVE' and (select count(*) from project_members o where o.project_id = m.project_id and o.status = 'ACTIVE') > 1 group by m.user_id`);
   let worker = { ok: false, ffmpeg: null as string | null, gpu: false, gpuNote: "" };
   try { const hb = await redis().get("glimpse:worker"); const w = hb ? JSON.parse(hb) : null; if (w && Date.now() - w.at < 60e3) worker = { ok: true, ffmpeg: w.ffmpeg, gpu: !!w.gpu, gpuNote: w.gpuNote || "" }; } catch { /* redis down */ }
@@ -177,7 +184,11 @@ async function adminData() {
   const [imm] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.users).where(sql`${schema.users.immichKeyEnc} is not null`);
   return {
     usage, totals, worker, dataFree, mediaFree, immichConnected: imm?.n ?? 0,
-    queue: q.map((x) => ({ ...x, createdAt: ms(x.createdAt), ownerName: x.ownerName.split(" ")[0] })),
+    queue: q.map((x) => {
+      const shown = open || x.ownerId === meId;
+      return { ...x, title: shown ? x.title : null, ownerName: shown ? x.ownerName.split(" ")[0] : null, createdAt: ms(x.createdAt), encoder: encoders[x.id] || null };
+    }),
+    preparing: prep.map((x) => ({ id: x.id, kind: x.kind, at: ms(x.at), progress: x.progress, encoder: encoders[x.id] || null, fileName: open ? x.fileName : null, ownerName: open ? x.ownerName.split(" ")[0] : null })),
     sharedProjects: Object.fromEntries((shared.rows as { uid: string; n: number }[]).map((r) => [r.uid, r.n]))
   };
 }

@@ -145,7 +145,7 @@ export function AppProvider({ initial, children }) {
     const t = setInterval(() => {
       const d = dbRef.current;
       if (!d || document.hidden) return;
-      const busy = d.mashes.some((m) => m.status === "rendering" || m.status === "queued") || d.media.some((m) => m.status === "PROCESSING" || m.status === "UPLOADING") || d.tracks.some((t) => t.status === "processing");
+      const busy = d.mashes.some((m) => m.status === "rendering" || m.status === "queued") || d.media.some((m) => m.status === "PROCESSING" || m.status === "UPLOADING") || d.tracks.some((t) => t.status === "processing") || !!(d.admin && ((d.admin.queue || []).length || (d.admin.preparing || []).length));
       if (busy) refresh().then((nd) => {
         if (!nd) return;
         nd.mashes.forEach((m) => {

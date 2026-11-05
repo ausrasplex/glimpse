@@ -10,7 +10,7 @@ import { downloadTo, putFile, keys, putStream } from "../server/storage";
 import { getSettings } from "../server/settings";
 import { decrypt } from "../server/crypto";
 import { env } from "../server/env";
-import { ffmpeg, probe, orientOf, run, gpuFor } from "./ff";
+import { ffmpeg, ffmpegProgress, probe, orientOf, run, gpuFor, noteEncoder } from "./ff";
 import { h264, withGpu } from "./encode";
 import { takenDayFrom } from "../shared/dates";
 import { embeddedVideoAt } from "../shared/media";
@@ -123,12 +123,13 @@ export async function processMedia(mediaId: string) {
     // Playback copy: H.264/AAC that every browser plays. ffmpeg applies the rotation tag itself.
     await withGpu(await gpuFor("playback", s.gpu), (device) => {
       const enc = h264(device, 24, 30);
-      return ffmpeg([
+      noteEncoder(mediaId, device);
+      return ffmpegProgress([
         ...enc.before, "-i", orig, "-map", "0:v:0", "-map", "0:a:0?",
         "-vf", `scale='if(gt(iw,ih),-2,min(${short},iw))':'if(gt(iw,ih),min(${short},ih),-2)',format=yuv420p${enc.filter}`,
         ...enc.video,
         "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-movflags", "+faststart", playback
-      ], 60 * 60e3);
+      ], p.duration, (done) => { setMedia(mediaId, { progress: Math.round(5 + done * 65) }).catch(() => undefined); }, 60 * 60e3);
     });
     await setMedia(mediaId, { progress: 70 });
     const poster = join(dir, "poster.jpg");
